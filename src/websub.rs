@@ -68,13 +68,20 @@ pub async fn challenge(State(state): State<AppState>, Query(query): Query<Challe
 }
 
 pub async fn notification(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> StatusCode {
-    if body.is_empty() { return StatusCode::BAD_REQUEST; }
+    info!(bytes = body.len(), "WebSub HTTP notification received");
+    if body.is_empty() {
+        warn!("WebSub notification has an empty body");
+        return StatusCode::BAD_REQUEST;
+    }
     let xml = match std::str::from_utf8(&body) { Ok(v) => v, Err(_) => return StatusCode::BAD_REQUEST };
     let videos = match parse_atom_entries(xml) {
         Ok(v) => v,
         Err(e) => { warn!(error=%e,"invalid YouTube Atom notification"); return StatusCode::BAD_REQUEST; }
     };
-    if videos.is_empty() { return StatusCode::NO_CONTENT; }
+    if videos.is_empty() {
+        info!("WebSub notification contains no video entries");
+        return StatusCode::NO_CONTENT;
+    }
 
     let channel_id = videos[0].channel_id.clone();
     if videos.iter().any(|video| video.channel_id != channel_id) {
@@ -97,6 +104,7 @@ pub async fn notification(State(state): State<AppState>, headers: HeaderMap, bod
         return StatusCode::UNAUTHORIZED;
     }
     for video in videos {
+        info!(channel_id = %video.channel_id, video_id = %video.video_id, title = %video.title, "WebSub video notification accepted");
         if let Err(e) = persist_video(&state, video, "websub", true).await {
             error!(error=%e, "failed to persist WebSub event");
             return StatusCode::SERVICE_UNAVAILABLE;
