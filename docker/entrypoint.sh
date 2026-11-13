@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 DATA_DIR="${VOXYTUBE_DATA_DIR:-/home/container/data}"
 PGDATA="${POSTGRES_DATA_DIR:-$DATA_DIR/postgres}"
-PG_BIN="${PG_BIN:-$(find /usr/lib/postgresql -type f -name initdb -printf '%h\n' 2>/dev/null | sort -V | tail -n1)}"
+PG_BIN="${PG_BIN:-$(find /usr/lib/postgresql -type f -name initdb -printf '%h\\n' 2>/dev/null | sort -V | tail -n1)}"
 DB_NAME="${POSTGRES_DB:-voxytube}"
 DB_USER="${POSTGRES_USER:-voxytube}"
 DB_PASSWORD_FILE="$DATA_DIR/.postgres_password"
@@ -27,7 +27,7 @@ elif [[ -s "$DB_PASSWORD_FILE" ]]; then
   DB_PASSWORD="$(cat "$DB_PASSWORD_FILE")"
 else
   umask 077
-  DB_PASSWORD="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+  DB_PASSWORD="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \\n')"
   printf '%s' "$DB_PASSWORD" > "$DB_PASSWORD_FILE"
 fi
 if [[ ! "$DB_PASSWORD" =~ ^[A-Za-z0-9._~-]{16,128}$ ]]; then
@@ -41,7 +41,9 @@ if [[ ! -s "$PGDATA/PG_VERSION" ]]; then
 fi
 
 echo "[VoxyTube] Starting embedded PostgreSQL..."
-gosu postgres "$PG_BIN/pg_ctl" -D "$PGDATA" -o "-c listen_addresses=127.0.0.1 -c port=5432 -c max_connections=${POSTGRES_MAX_CONNECTIONS:-30}" -w start
+gosu postgres "$PG_BIN/pg_ctl" -D "$PGDATA" \
+  -o "-c listen_addresses=127.0.0.1 -c port=5432 -c max_connections=${POSTGRES_MAX_CONNECTIONS:-30}" \
+  -w start
 
 cleanup() {
   local status=${1:-0}
@@ -62,21 +64,7 @@ else
   gosu postgres "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -c "CREATE ROLE \"$DB_USER\" WITH LOGIN PASSWORD '$DB_PASSWORD'"
 fi
 
-if ! gosu postgres "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q '^1
-export DATABASE_URL="postgres://$DB_USER:$DB_PASSWORD@127.0.0.1:5432/$DB_NAME"
-export PORT="${PORT:-8080}"
-export DATABASE_MAX_CONNECTIONS="${DATABASE_MAX_CONNECTIONS:-10}"
-export RUST_LOG="${RUST_LOG:-voxytube=info,tower_http=info}"
-
-echo "[VoxyTube] Starting Rust service on port $PORT..."
-gosu voxytube /usr/local/bin/voxytube &
-APP_PID=$!
-set +e
-wait "$APP_PID"
-APP_STATUS=$?
-set -e
-cleanup "$APP_STATUS"
-; then
+if ! gosu postgres "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q '^1$'; then
   gosu postgres "$PG_BIN/createdb" --owner="$DB_USER" "$DB_NAME"
 fi
 
