@@ -260,12 +260,21 @@ async fn subscription_worker(state: AppState) {
 
 async fn rss_worker(state: AppState) {
     let interval_seconds = state.config.rss_interval_seconds.max(60);
-    let mut interval = tokio::time::interval(Duration::from_secs(interval_seconds));
+    // Check eligibility more frequently than the per-channel polling interval.
+    // A scheduler ticking at the same cadence as RSS_INTERVAL_SECONDS can miss
+    // due rows when next_poll_at falls just after a scheduler tick.
+    let mut interval = tokio::time::interval(Duration::from_secs(30));
     loop {
         interval.tick().await;
         let rows = sqlx::query("SELECT channel_id, topic_url, etag, last_modified, created_at FROM websub_subscriptions WHERE state IN ('active','pending') AND (next_poll_at IS NULL OR next_poll_at <= NOW())")
             .fetch_all(&state.db).await;
-        let Ok(rows) = rows else { continue };
+        let rows = match rows {
+            Ok(rows) => rows,
+            Err(e) => {
+                error!(error=%e, "RSS scheduler query failed");
+                continue;
+            }
+        };
         for row in rows {
             let channel_id: String = sqlx::Row::try_get(&row, "channel_id").unwrap_or_default();
             let topic: String = sqlx::Row::try_get(&row, "topic_url").unwrap_or_default();
