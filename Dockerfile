@@ -33,9 +33,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends postgresql postgresql-client gosu ca-certificates bash curl \
     && rm -rf /var/lib/apt/lists/* \
+    && (getent group postgres >/dev/null || groupadd --system postgres) \
+    && (getent passwd postgres >/dev/null || useradd --system --gid postgres --home-dir /var/lib/postgresql --shell /bin/bash postgres) \
     && groupadd --system voxytube \
     && useradd --system --gid voxytube --home-dir /home/container --no-create-home voxytube \
-    && mkdir -p /home/container/data /opt/voxytube \
+    && mkdir -p /home/container/data /opt/voxytube /var/lib/postgresql /var/run/postgresql /var/log/postgresql \
+    && chown -R postgres:postgres /var/lib/postgresql /var/run/postgresql /var/log/postgresql \
     && chown -R voxytube:voxytube /home/container
 
 COPY --from=builder /build/voxytube /usr/local/bin/voxytube
