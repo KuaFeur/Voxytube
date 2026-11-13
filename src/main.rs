@@ -77,6 +77,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/websub", get(websub::challenge).post(websub::notification))
         .route("/api/v1/channels", get(list_channels).post(add_channel))
         .route("/api/v1/channels/{channel_id}", delete(remove_channel))
+        .route("/api/v1/events", get(list_events))
+        .route("/api/v1/events/{event_id}/retry", post(retry_event))
         .with_state(state.clone())
         .layer(RequestBodyLimitLayer::new(256 * 1024))
         .layer(TraceLayer::new_for_http());
@@ -151,14 +153,58 @@ async fn remove_channel(
     axum::extract::Path(channel_id): axum::extract::Path<String>,
 ) -> Result<StatusCode, StatusCode> {
     if !authorized(&state, &headers) { return Err(StatusCode::UNAUTHORIZED); }
-    let exists = sqlx::query("SELECT 1 FROM websub_subscriptions WHERE channel_id=$1")
-        .bind(&channel_id).fetch_optional(&state.db).await
+    let result = sqlx::query("UPDATE websub_subscriptions SET state='unsubscribing', updated_at=NOW(), last_error=NULL WHERE channel_id=$1")
+        .bind(&channel_id).execute(&state.db).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    if exists.is_none() { return Ok(StatusCode::NO_CONTENT); }
+    if result.rows_affected() == 0 { return Ok(StatusCode::NO_CONTENT); }
     request_subscription(&state, &channel_id, "unsubscribe").await;
-    sqlx::query("UPDATE websub_subscriptions SET state='expired', lease_expires_at=NULL, updated_at=NOW() WHERE channel_id=$1")
-        .bind(channel_id).execute(&state.db).await
+    Ok(StatusCode::ACCEPTED)
+}
+
+#[derive(Debug, Serialize, FromRow)]
+struct EventRecord {
+    id: i64,
+    video_id: Option<String>,
+    title: Option<String>,
+    status: String,
+    attempts: i32,
+    next_attempt_at: chrono::DateTime<Utc>,
+    last_error: Option<String>,
+    created_at: chrono::DateTime<Utc>,
+    delivered_at: Option<chrono::DateTime<Utc>>,
+}
+
+async fn list_events(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    if !authorized(&state, &headers) { return Err(StatusCode::UNAUTHORIZED); }
+    let rows = sqlx::query_as::<_, EventRecord>(
+        "SELECT id, payload->>'video_id' AS video_id, payload->>'title' AS title, status, attempts, next_attempt_at, last_error, created_at, delivered_at FROM event_outbox ORDER BY id DESC LIMIT 100"
+    ).fetch_all(&state.db).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let counts = sqlx::query("SELECT status, COUNT(*)::BIGINT AS count FROM event_outbox GROUP BY status")
+        .fetch_all(&state.db).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut summary = serde_json::Map::new();
+    for row in counts {
+        let status: String = sqlx::Row::try_get(&row, "status").unwrap_or_default();
+        let count: i64 = sqlx::Row::try_get(&row, "count").unwrap_or_default();
+        summary.insert(status, serde_json::json!(count));
+    }
+    Ok(Json(serde_json::json!({"counts": summary, "recent": rows})))
+}
+
+async fn retry_event(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(event_id): axum::extract::Path<i64>,
+) -> Result<StatusCode, StatusCode> {
+    if !authorized(&state, &headers) { return Err(StatusCode::UNAUTHORIZED); }
+    let result = sqlx::query("UPDATE event_outbox SET status='pending', attempts=0, next_attempt_at=NOW(), locked_at=NULL, last_error=NULL WHERE id=$1 AND status='dead'")
+        .bind(event_id).execute(&state.db).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if result.rows_affected() == 0 { return Err(StatusCode::NOT_FOUND); }
     Ok(StatusCode::ACCEPTED)
 }
 
@@ -198,12 +244,14 @@ async fn subscription_worker(state: AppState) {
     let mut interval = tokio::time::interval(Duration::from_secs(300));
     loop {
         interval.tick().await;
-        let rows = sqlx::query("SELECT channel_id FROM websub_subscriptions WHERE state IN ('pending','active') AND (lease_expires_at IS NULL OR lease_expires_at < NOW() + INTERVAL '12 hours') AND updated_at < NOW() - INTERVAL '4 minutes'")
+        let rows = sqlx::query("SELECT channel_id, state FROM websub_subscriptions WHERE state IN ('pending','active','unsubscribing') AND (state='unsubscribing' OR lease_expires_at IS NULL OR lease_expires_at < NOW() + INTERVAL '12 hours') AND updated_at < NOW() - INTERVAL '4 minutes'")
             .fetch_all(&state.db).await;
         match rows {
             Ok(rows) => for row in rows {
                 let id: String = sqlx::Row::try_get(&row, "channel_id").unwrap_or_default();
-                request_subscription(&state, &id, "subscribe").await;
+                let current_state: String = sqlx::Row::try_get(&row, "state").unwrap_or_default();
+                let mode = if current_state == "unsubscribing" { "unsubscribe" } else { "subscribe" };
+                request_subscription(&state, &id, mode).await;
             },
             Err(e) => error!(error=%e,"subscription renewal query failed"),
         }

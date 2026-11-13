@@ -37,23 +37,31 @@ pub async fn challenge(State(state): State<AppState>, Query(query): Query<Challe
     if !matches!(mode, "subscribe" | "unsubscribe") {
         return (StatusCode::BAD_REQUEST, "unsupported WebSub mode".to_owned());
     }
-    let row = sqlx::query("SELECT verify_token FROM websub_subscriptions WHERE topic_url=$1")
+    let row = sqlx::query("SELECT verify_token, state FROM websub_subscriptions WHERE topic_url=$1")
         .bind(&topic).fetch_optional(&state.db).await;
     let Ok(Some(row)) = row else { return (StatusCode::FORBIDDEN, "unknown topic".into()); };
     let expected: Option<String> = row.try_get("verify_token").ok().flatten();
+    let current_state: String = row.try_get("state").unwrap_or_default();
     if expected.as_deref() != Some(token) {
         return (StatusCode::FORBIDDEN, "verification token mismatch".into());
     }
+    if (mode == "subscribe" && !matches!(current_state.as_str(), "pending" | "active"))
+        || (mode == "unsubscribe" && current_state != "unsubscribing") {
+        return (StatusCode::GONE, "subscription state no longer matches challenge".into());
+    }
     if mode == "subscribe" {
         let lease = query.lease_seconds.unwrap_or(86400).clamp(60, 31_536_000);
-        if let Err(e) = sqlx::query("UPDATE websub_subscriptions SET state='active', lease_expires_at=NOW()+($2 * INTERVAL '1 second'), last_error=NULL, updated_at=NOW() WHERE topic_url=$1")
+        if let Err(e) = sqlx::query("UPDATE websub_subscriptions SET state='active', lease_expires_at=NOW()+($2 * INTERVAL '1 second'), last_error=NULL, updated_at=NOW() WHERE topic_url=$1 AND state IN ('pending','active')")
             .bind(&topic).bind(lease).execute(&state.db).await {
             error!(error=%e,"failed to activate WebSub subscription");
             return (StatusCode::SERVICE_UNAVAILABLE, "database error".into());
         }
     } else {
-        let _ = sqlx::query("DELETE FROM websub_subscriptions WHERE topic_url=$1")
-            .bind(&topic).execute(&state.db).await;
+        if let Err(e) = sqlx::query("DELETE FROM websub_subscriptions WHERE topic_url=$1 AND state='unsubscribing'")
+            .bind(&topic).execute(&state.db).await {
+            error!(error=%e,"failed to remove WebSub subscription");
+            return (StatusCode::SERVICE_UNAVAILABLE, "database error".into());
+        }
     }
     info!(mode, "WebSub challenge verified");
     (StatusCode::OK, challenge)

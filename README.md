@@ -69,6 +69,12 @@ VoxyTube sends `Idempotency-Key: voxytube-<outbox-id>`. The receiving endpoint s
 
 Use Rust stable (edition 2024) and PostgreSQL 14+. Create a database, copy `.env.example` to `.env`, set `DATABASE_URL`, `PUBLIC_CALLBACK_URL` and `API_TOKEN`, then run `cargo run`.
 
+## Event operations
+
+- GET /api/v1/events returns counts by state and the latest 100 events. Requires the management bearer token.
+- POST /api/v1/events/{id}/retry requeues a dead event and resets its retry counter. Requires the management bearer token.
+- DELETE /api/v1/channels/{channel_id} starts an asynchronous WebSub unsubscribe; the request is retried until the hub verifies it.
+
 ## Operations and backups
 
 The PostgreSQL data directory is stored in `/home/container/data/postgres`. Keep this directory on Pelican's persistent server volume; deleting it resets all channel subscriptions and delivery history. Stop the server before taking a raw filesystem backup. For a live logical backup, run `pg_dump -Fc -d voxytube` as the `postgres` OS user from inside the container and copy the resulting dump to persistent storage. Restore with `pg_restore` while VoxyTube is stopped and PostgreSQL is running, after first taking a separate backup of the current data.
