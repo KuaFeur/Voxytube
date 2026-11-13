@@ -141,12 +141,21 @@ jobs:
           grep -q 'smoke-video-001' /tmp/voxytube-smoke-body.json
           grep -q '^voxytube-[0-9][0-9]*$' /tmp/voxytube-smoke-key
           test "$(cat /tmp/voxytube-smoke-count)" = "1"
+          EVENTS_FILE=/tmp/voxytube-smoke-events.json
+          EVENT_STATUS=0
           for attempt in $(seq 1 30); do
-            EVENT_STATUS=$(curl --fail --silent -H "Authorization: Bearer smoke-test-token-with-more-than-32-characters" "$BASE/api/v1/events" | python3 -c 'import json,sys; print(json.load(sys.stdin)["counts"].get("delivered", 0))')
+            HTTP_STATUS=$(curl --silent --show-error --output "$EVENTS_FILE" --write-out '%{http_code}' \
+              -H "Authorization: Bearer smoke-test-token-with-more-than-32-characters" "$BASE/api/v1/events")
+            if test "$HTTP_STATUS" != "200"; then
+              echo "Events API returned HTTP $HTTP_STATUS:"
+              cat "$EVENTS_FILE"
+              docker logs voxytube-smoke
+              exit 1
+            fi
+            EVENT_STATUS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["counts"].get("delivered", 0))' "$EVENTS_FILE")
             if test "$EVENT_STATUS" = "1"; then break; fi
             sleep 1
           done
           test "$EVENT_STATUS" = "1"
-          curl --fail --silent -H "Authorization: Bearer smoke-test-token-with-more-than-32-characters" "$BASE/api/v1/events" |
-            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["counts"]["delivered"] == 1; assert len(d["recent"]) == 1'
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["counts"]["delivered"] == 1; assert len(d["recent"]) == 1' "$EVENTS_FILE"
           echo "VoxyTube container, embedded PostgreSQL, API auth, WebSub challenge, HMAC, deduplication and webhook delivery smoke test passed."

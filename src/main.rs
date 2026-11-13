@@ -182,10 +182,10 @@ async fn list_events(
     let rows = sqlx::query_as::<_, EventRecord>(
         "SELECT id, payload->>'video_id' AS video_id, payload->>'title' AS title, status, attempts, next_attempt_at, last_error, created_at, delivered_at FROM event_outbox ORDER BY id DESC LIMIT 100"
     ).fetch_all(&state.db).await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|err| { error!(error=%err, "failed to query recent event records"); StatusCode::INTERNAL_SERVER_ERROR })?;
     let counts = sqlx::query("SELECT status, COUNT(*)::BIGINT AS count FROM event_outbox GROUP BY status")
         .fetch_all(&state.db).await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|err| { error!(error=%err, "failed to query event counts"); StatusCode::INTERNAL_SERVER_ERROR })?;
     let mut summary = serde_json::Map::new();
     for row in counts {
         let status: String = sqlx::Row::try_get(&row, "status").unwrap_or_default();
