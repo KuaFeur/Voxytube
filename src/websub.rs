@@ -68,22 +68,29 @@ pub async fn notification(State(state): State<AppState>, headers: HeaderMap, bod
     };
     if videos.is_empty() { return StatusCode::NO_CONTENT; }
 
+    let channel_id = videos[0].channel_id.clone();
+    if videos.iter().any(|video| video.channel_id != channel_id) {
+        warn!("WebSub batch contains more than one channel");
+        return StatusCode::BAD_REQUEST;
+    }
+    let row = sqlx::query("SELECT secret FROM websub_subscriptions WHERE channel_id=$1 AND state='active'")
+        .bind(&channel_id).fetch_optional(&state.db).await;
+    let Ok(Some(row)) = row else {
+        warn!(channel_id, "notification for unsubscribed channel");
+        return StatusCode::FORBIDDEN;
+    };
+    let secret: Option<String> = row.try_get("secret").ok().flatten();
+    let Some(secret) = secret else {
+        warn!(channel_id, "active subscription has no secret");
+        return StatusCode::UNAUTHORIZED;
+    };
+    if !verify_signature(&headers, &body, &secret) {
+        warn!(channel_id, "invalid WebSub HMAC signature");
+        return StatusCode::UNAUTHORIZED;
+    }
     for video in videos {
-        let row = sqlx::query("SELECT secret FROM websub_subscriptions WHERE channel_id=$1 AND state='active'")
-            .bind(&video.channel_id).fetch_optional(&state.db).await;
-        let Ok(Some(row)) = row else { warn!(channel_id=%video.channel_id,"notification for unsubscribed channel"); return StatusCode::FORBIDDEN; };
-        let secret: Option<String> = row.try_get("secret").ok().flatten();
-        if let Some(secret) = secret {
-            if !verify_signature(&headers, &body, &secret) {
-                warn!(channel_id=%video.channel_id,"invalid WebSub HMAC signature");
-                return StatusCode::UNAUTHORIZED;
-            }
-        } else {
-            warn!(channel_id=%video.channel_id,"active subscription has no secret; rejecting notification");
-            return StatusCode::UNAUTHORIZED;
-        }
         if let Err(e) = persist_video(&state, video, "websub", true).await {
-            error!(error=%e,"failed to persist WebSub event");
+            error!(error=%e, "failed to persist WebSub event");
             return StatusCode::SERVICE_UNAVAILABLE;
         }
     }

@@ -252,9 +252,17 @@ async fn rss_worker(state: AppState) {
                                 let _ = sqlx::query("UPDATE websub_subscriptions SET etag=COALESCE($2,etag), last_modified=COALESCE($3,last_modified), poll_failures=0, last_error=NULL, next_poll_at=NOW()+($4 * INTERVAL '1 second') WHERE channel_id=$1")
                                     .bind(&channel_id).bind(new_etag).bind(new_modified).bind(interval_seconds as i64).execute(&state.db).await;
                             }
-                            Err(e) => warn!(channel_id, error=%e, "RSS feed parsing failed"),
+                            Err(e) => {
+                                warn!(channel_id, error=%e, "RSS feed parsing failed");
+                                let _ = sqlx::query("UPDATE websub_subscriptions SET poll_failures=LEAST(poll_failures+1,10), last_error=$2, next_poll_at=NOW()+LEAST(3600, (30 * power(2, LEAST(poll_failures,7)))::int) * INTERVAL '1 second' WHERE channel_id=$1")
+                                    .bind(&channel_id).bind(e.to_string()).execute(&state.db).await;
+                            },
                         },
-                        Err(e) => warn!(channel_id, error=%e, "RSS response body failed"),
+                        Err(e) => {
+                            warn!(channel_id, error=%e, "RSS response body failed");
+                            let _ = sqlx::query("UPDATE websub_subscriptions SET poll_failures=LEAST(poll_failures+1,10), last_error=$2, next_poll_at=NOW()+LEAST(3600, (30 * power(2, LEAST(poll_failures,7)))::int) * INTERVAL '1 second' WHERE channel_id=$1")
+                                .bind(&channel_id).bind(e.to_string()).execute(&state.db).await;
+                        },
                     }
                 }
                 Ok(resp) => {

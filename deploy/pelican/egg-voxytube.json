@@ -62,7 +62,7 @@
       "name": "Public HTTPS Callback URL",
       "description": "Public URL YouTube calls for WebSub. Must end in /websub.",
       "env_variable": "PUBLIC_CALLBACK_URL",
-      "default_value": "https://youtube.example.com/websub",
+      "default_value": "",
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|string|url|max:512",
