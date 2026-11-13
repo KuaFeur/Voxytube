@@ -26,6 +26,12 @@ fi
 
 mkdir -p "$DATA_DIR" "$PGDATA"
 chmod 0700 "$PGDATA"
+if [[ "$(id -u)" -eq 0 ]]; then
+  chown -R postgres:postgres "$PGDATA"
+elif [[ ! -w "$PGDATA" ]]; then
+  echo "[VoxyTube] Data volume is not writable by container UID $(id -u). Check Pelican volume permissions." >&2
+  exit 1
+fi
 
 if [[ -n "${POSTGRES_PASSWORD:-}" ]]; then
   DB_PASSWORD="$POSTGRES_PASSWORD"
@@ -42,9 +48,8 @@ if [[ ! "$DB_PASSWORD" =~ ^[A-Za-z0-9._~-]{16,128}$ ]]; then
 fi
 
 if [[ ! -s "$PGDATA/PG_VERSION" ]]; then
-  chown -R postgres:postgres "$PGDATA"
   echo "[VoxyTube] Initializing embedded PostgreSQL..."
-  gosu postgres "$PG_BIN/initdb" -D "$PGDATA" --username=postgres --encoding=UTF8 --auth-local=peer --auth-host=scram-sha-256
+  run_pg "$PG_BIN/initdb" -D "$PGDATA" --username=postgres --encoding=UTF8 --auth-local=peer --auth-host=scram-sha-256
 else
   if [[ "$(id -u)" -eq 0 ]]; then chown postgres:postgres "$PGDATA"; fi
 fi
@@ -94,7 +99,11 @@ export RUST_LOG="${RUST_LOG:-voxytube=info,tower_http=info}"
 
 echo "[VoxyTube] Starting Rust service on port $PORT..."
 if [[ "$(id -u)" -eq 0 ]]; then
+  if [[ "$(id -u)" -eq 0 ]]; then
   gosu voxytube /usr/local/bin/voxytube &
+else
+  /usr/local/bin/voxytube &
+fi
 else
   /usr/local/bin/voxytube &
 fi
