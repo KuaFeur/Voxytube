@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 DATA_DIR="${VOXYTUBE_DATA_DIR:-/home/container/data}"
 PGDATA="${POSTGRES_DATA_DIR:-$DATA_DIR/postgres}"
+PG_RUN_DIR="$PGDATA/run"
 PG_BIN="${PG_BIN:-$(find /usr/lib/postgresql -type f -name initdb -printf '%h\n' 2>/dev/null | sort -V | tail -n1)}"
 DB_NAME="${POSTGRES_DB:-voxytube}"
 DB_USER="${POSTGRES_USER:-voxytube}"
@@ -26,6 +27,8 @@ fi
 
 mkdir -p "$DATA_DIR" "$PGDATA"
 chmod 0700 "$PGDATA"
+mkdir -p "$PG_RUN_DIR"
+chmod 0700 "$PG_RUN_DIR"
 if [[ "$(id -u)" -eq 0 ]]; then
   chown -R postgres:postgres "$PGDATA"
 elif [[ ! -w "$PGDATA" ]]; then
@@ -55,9 +58,10 @@ else
 fi
 
 export PGUSER=postgres
+export PGHOST=127.0.0.1
 echo "[VoxyTube] Starting embedded PostgreSQL..."
 run_pg "$PG_BIN/pg_ctl" -D "$PGDATA" \
-  -o "-c listen_addresses=127.0.0.1 -c port=5432 -c max_connections=${POSTGRES_MAX_CONNECTIONS:-30}" \
+  -o "-c listen_addresses=127.0.0.1 -c unix_socket_directories=$PG_RUN_DIR -c port=5432 -c max_connections=${POSTGRES_MAX_CONNECTIONS:-30}" \
   -w start
 
 cleanup() {
@@ -100,11 +104,7 @@ export RUST_LOG="${RUST_LOG:-voxytube=info,tower_http=info}"
 
 echo "[VoxyTube] Starting Rust service on port $PORT..."
 if [[ "$(id -u)" -eq 0 ]]; then
-  if [[ "$(id -u)" -eq 0 ]]; then
   gosu voxytube /usr/local/bin/voxytube &
-else
-  /usr/local/bin/voxytube &
-fi
 else
   /usr/local/bin/voxytube &
 fi
