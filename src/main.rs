@@ -125,7 +125,7 @@ async fn add_channel(
     let mut verify = [0u8; 24];
     OsRng.fill_bytes(&mut verify);
     let verify_token = hex::encode(verify);
-    let topic = format!("https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}");
+    let topic = format!("https://www.youtube.com/xml/feeds/videos.xml?channel_id={channel_id}");
 
     sqlx::query(
         "INSERT INTO websub_subscriptions (channel_id, topic_url, callback_url, secret, verify_token, state, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,'pending',NOW(),NOW()) ON CONFLICT (channel_id) DO UPDATE SET topic_url=EXCLUDED.topic_url, callback_url=EXCLUDED.callback_url, secret=EXCLUDED.secret, verify_token=EXCLUDED.verify_token, state='pending', lease_expires_at=NULL, updated_at=NOW(), last_error=NULL"
