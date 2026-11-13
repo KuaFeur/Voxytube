@@ -18,7 +18,6 @@ if [[ ! "$DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]{0,62}$ || ! "$DB_USER" =~ ^[A-Za-z_
 fi
 
 mkdir -p "$DATA_DIR" "$PGDATA"
-chown -R postgres:postgres "$PGDATA"
 chmod 0700 "$PGDATA"
 
 if [[ -n "${POSTGRES_PASSWORD:-}" ]]; then
@@ -36,6 +35,7 @@ if [[ ! "$DB_PASSWORD" =~ ^[A-Za-z0-9._~-]{16,128}$ ]]; then
 fi
 
 if [[ ! -s "$PGDATA/PG_VERSION" ]]; then
+  chown -R postgres:postgres "$PGDATA"
   echo "[VoxyTube] Initializing embedded PostgreSQL..."
   gosu postgres "$PG_BIN/initdb" -D "$PGDATA" --username=postgres --auth-local=peer --auth-host=scram-sha-256
 else
