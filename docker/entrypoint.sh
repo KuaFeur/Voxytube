@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 DATA_DIR="${VOXYTUBE_DATA_DIR:-/home/container/data}"
 PGDATA="${POSTGRES_DATA_DIR:-$DATA_DIR/postgres}"
-PG_BIN="${PG_BIN:-$(find /usr/lib/postgresql -type f -name initdb -printf '%h\\n' 2>/dev/null | sort -V | tail -n1)}"
+PG_BIN="${PG_BIN:-$(find /usr/lib/postgresql -type f -name initdb -printf '%h\n' 2>/dev/null | sort -V | tail -n1)}"
 DB_NAME="${POSTGRES_DB:-voxytube}"
 DB_USER="${POSTGRES_USER:-voxytube}"
 DB_PASSWORD_FILE="$DATA_DIR/.postgres_password"
@@ -27,7 +27,7 @@ elif [[ -s "$DB_PASSWORD_FILE" ]]; then
   DB_PASSWORD="$(cat "$DB_PASSWORD_FILE")"
 else
   umask 077
-  DB_PASSWORD="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \\n')"
+  DB_PASSWORD="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
   printf '%s' "$DB_PASSWORD" > "$DB_PASSWORD_FILE"
 fi
 if [[ ! "$DB_PASSWORD" =~ ^[A-Za-z0-9._~-]{16,128}$ ]]; then
