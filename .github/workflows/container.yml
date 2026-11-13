@@ -104,6 +104,7 @@ jobs:
             sleep 2
           done
           curl --fail --silent http://127.0.0.1:18080/healthz
+          test "$(docker exec voxytube-smoke gosu postgres psql -d voxytube -tAc 'SHOW server_encoding' | tr -d '[:space:]')" = "UTF8"
 
           BASE=http://127.0.0.1:18080
           UNAUTHORIZED=$(curl --silent --output /dev/null --write-out '%{http_code}' "$BASE/api/v1/channels")

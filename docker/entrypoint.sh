@@ -37,7 +37,7 @@ fi
 if [[ ! -s "$PGDATA/PG_VERSION" ]]; then
   chown -R postgres:postgres "$PGDATA"
   echo "[VoxyTube] Initializing embedded PostgreSQL..."
-  gosu postgres "$PG_BIN/initdb" -D "$PGDATA" --username=postgres --auth-local=peer --auth-host=scram-sha-256
+  gosu postgres "$PG_BIN/initdb" -D "$PGDATA" --username=postgres --encoding=UTF8 --auth-local=peer --auth-host=scram-sha-256
 else
   chown postgres:postgres "$PGDATA"
 fi
