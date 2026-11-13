@@ -76,7 +76,7 @@
       "user_viewable": false,
       "user_editable": true,
       "rules": "required|string|min:32|max:256",
-      "field_type": "text"
+      "field_type": "password"
     },
     {
       "name": "Voxy Webhook URL",
@@ -96,7 +96,7 @@
       "user_viewable": false,
       "user_editable": true,
       "rules": "nullable|string|max:512",
-      "field_type": "text"
+      "field_type": "password"
     },
     {
       "name": "RSS Fallback Interval",

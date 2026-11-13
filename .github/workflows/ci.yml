@@ -12,6 +12,22 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: voxytube
+          POSTGRES_PASSWORD: voxytube_test_password
+          POSTGRES_DB: voxytube_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U voxytube -d voxytube_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://voxytube:voxytube_test_password@localhost:5432/voxytube_test
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

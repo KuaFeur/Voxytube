@@ -50,3 +50,22 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Smoke test published image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker run -d --name voxytube-smoke \
+            -e PUBLIC_CALLBACK_URL=https://example.invalid/websub \
+            -e API_TOKEN=smoke-test-token-with-more-than-32-characters \
+            -p 18080:8080 ghcr.io/kuafeur/voxytube:latest
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18080/healthz; then
+              docker logs voxytube-smoke
+              docker rm -f voxytube-smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs voxytube-smoke
+          docker rm -f voxytube-smoke || true
+          exit 1
