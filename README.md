@@ -33,7 +33,9 @@ All management endpoints require `Authorization: Bearer <API_TOKEN>`.
 
 - `POST /api/v1/channels` — JSON body: `{"channel_id":"UC..."}`; starts an asynchronous WebSub subscription.
 - `GET /api/v1/channels` — lists configured channels and their subscription state.
-- `DELETE /api/v1/channels/{channel_id}` — requests an asynchronous unsubscribe; the hub removes the subscription after its verification challenge.
+- `DELETE /api/v1/channels/{channel_id}` — starts an asynchronous unsubscribe; VoxyTube retries until the hub verifies it.
+- `GET /api/v1/events` — event counts and the latest 100 deliveries.
+- `POST /api/v1/events/{id}/retry` — requeues a dead event.
 - `GET /healthz` and `GET /readyz` — database health checks.
 - `GET /websub` and `POST /websub` — public WebSub callback.
 
