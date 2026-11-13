@@ -27,3 +27,5 @@ CREATE INDEX IF NOT EXISTS idx_event_outbox_pending
 CREATE INDEX IF NOT EXISTS idx_websub_subscriptions_renew
     ON websub_subscriptions (lease_expires_at)
     WHERE state IN ('pending', 'active');
+
+ALTER TABLE event_outbox ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;

@@ -275,14 +275,14 @@ async fn persist_video(state: &AppState, video: websub::VideoEntry, source: &str
     let mut tx = state.db.begin().await?;
     let inserted = sqlx::query("INSERT INTO youtube_videos (video_id,channel_id,channel_title,title,published_at,updated_at,first_seen_at) VALUES ($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT(video_id) DO NOTHING")
         .bind(&video.video_id).bind(&video.channel_id).bind(&video.channel_title)
-        .bind(&video.title).bind(video.published_at).bind(video.updated_at)
+        .bind(&video.title).bind(video.published_at.clone()).bind(video.updated_at.clone())
         .execute(&mut *tx).await?.rows_affected() > 0;
     if inserted && enqueue {
         let event = VideoEvent {
             event: "youtube.video.published".into(), video_id: video.video_id.clone(),
             channel_id: video.channel_id.clone(), channel_title: video.channel_title.clone(),
             title: video.title.clone(), url: format!("https://www.youtube.com/watch?v={}", video.video_id),
-            published_at: video.published_at, source: source.into(),
+            published_at: video.published_at.clone(), source: source.into(),
         };
         sqlx::query("INSERT INTO event_outbox(video_id,payload) VALUES($1,$2)")
             .bind(&video.video_id).bind(serde_json::to_value(event)?).execute(&mut *tx).await?;
@@ -296,7 +296,7 @@ async fn delivery_worker(state: AppState) {
     loop {
         interval.tick().await;
         if state.config.voxy_webhook_url.is_empty() { continue; }
-        let row = sqlx::query("WITH candidate AS (SELECT id FROM event_outbox WHERE status IN ('pending','processing') AND next_attempt_at<=NOW() ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE event_outbox SET status='processing', attempts=attempts+1 FROM candidate WHERE event_outbox.id=candidate.id RETURNING event_outbox.id,event_outbox.payload,event_outbox.attempts")
+        let row = sqlx::query("WITH candidate AS (SELECT id FROM event_outbox WHERE (status='pending' OR (status='processing' AND locked_at < NOW() - INTERVAL '2 minutes')) AND next_attempt_at<=NOW() ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE event_outbox SET status='processing', locked_at=NOW(), attempts=attempts+1 FROM candidate WHERE event_outbox.id=candidate.id RETURNING event_outbox.id,event_outbox.payload,event_outbox.attempts")
             .fetch_optional(&state.db).await;
         let Ok(Some(row)) = row else { continue };
         let id: i64 = sqlx::Row::try_get(&row, "id").unwrap_or_default();
