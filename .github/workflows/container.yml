@@ -99,11 +99,24 @@ jobs:
             -e VOXY_WEBHOOK_URL=http://host.docker.internal:18081/receive \
             -p 18080:8080 ghcr.io/kuafeur/voxytube:latest
 
+          READY=0
           for attempt in $(seq 1 60); do
-            if curl --fail --silent http://127.0.0.1:18080/healthz; then break; fi
+            if curl --fail --silent http://127.0.0.1:18080/healthz; then
+              READY=1
+              break
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' voxytube-smoke 2>/dev/null || true)" != "true" ]; then
+              echo "VoxyTube container exited before becoming healthy."
+              docker logs voxytube-smoke 2>&1 || true
+              exit 1
+            fi
             sleep 2
           done
-          curl --fail --silent http://127.0.0.1:18080/healthz
+          if [ "$READY" != "1" ]; then
+            echo "VoxyTube did not become healthy within 120 seconds."
+            docker logs voxytube-smoke 2>&1 || true
+            exit 1
+          fi
           test "$(docker exec voxytube-smoke gosu postgres psql -d voxytube -tAc 'SHOW server_encoding' | tr -d '[:space:]')" = "UTF8"
 
           BASE=http://127.0.0.1:18080
