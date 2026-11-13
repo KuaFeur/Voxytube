@@ -92,3 +92,8 @@ The V1 implementation is under active validation. A release must not be consider
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+
+## Full documentation
+
+The complete developer documentation is organized for GitBook in [`SUMMARY.md`](SUMMARY.md), with pages covering architecture, installation, configuration, the REST API, WebSub, webhook events, operations and backups. Import the repository into GitBook using Git Sync and select the repository root as the documentation location.
