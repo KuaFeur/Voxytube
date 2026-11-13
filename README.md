@@ -5,7 +5,7 @@ VoxyTube is an independent Rust service that receives YouTube upload notificatio
 ## V1 scope
 
 - WebSub subscriptions with verification challenges, lease renewal, and HMAC-SHA1 validation.
-- RSS reconciliation using YouTube channel feeds, conditional requests (ETag / Last-Modified), and bounded retry backoff.
+- Best-effort RSS reconciliation using YouTube channel feeds, conditional requests (ETag / Last-Modified), and bounded retry backoff. RSS can only see entries YouTube still exposes in its feed; WebSub remains the primary near-real-time source.
 - PostgreSQL-backed deduplication and durable event outbox.
 - Authenticated channel management API.
 - Retried event delivery with an idempotency key.

@@ -17,6 +17,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -58,18 +59,88 @@ jobs:
       - name: Smoke test published image
         if: github.ref == 'refs/heads/main'
         run: |
+          set -Eeuo pipefail
+          rm -f /tmp/voxytube-smoke-body.json /tmp/voxytube-smoke-key /tmp/voxytube-smoke-count
+
+          cat > /tmp/voxytube-smoke-receiver.py <<'PY'
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          from pathlib import Path
+
+          class Receiver(BaseHTTPRequestHandler):
+              def do_POST(self):
+                  body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                  count_file = Path("/tmp/voxytube-smoke-count")
+                  count = int(count_file.read_text()) + 1 if count_file.exists() else 1
+                  count_file.write_text(str(count))
+                  Path("/tmp/voxytube-smoke-body.json").write_bytes(body)
+                  Path("/tmp/voxytube-smoke-key").write_text(self.headers.get("Idempotency-Key", ""))
+                  self.send_response(204)
+                  self.end_headers()
+
+              def log_message(self, *_args):
+                  pass
+
+          HTTPServer(("0.0.0.0", 18081), Receiver).serve_forever()
+          PY
+          python3 /tmp/voxytube-smoke-receiver.py >/tmp/voxytube-smoke-receiver.log 2>&1 &
+          MOCK_PID=$!
+
+          cleanup() {
+            docker logs voxytube-smoke 2>/dev/null || true
+            docker rm -f voxytube-smoke 2>/dev/null || true
+            kill "$MOCK_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
           docker run -d --name voxytube-smoke \
+            --add-host=host.docker.internal:host-gateway \
             -e PUBLIC_CALLBACK_URL=https://example.invalid/websub \
             -e API_TOKEN=smoke-test-token-with-more-than-32-characters \
+            -e VOXY_WEBHOOK_URL=http://host.docker.internal:18081/receive \
             -p 18080:8080 ghcr.io/kuafeur/voxytube:latest
+
           for attempt in $(seq 1 60); do
-            if curl --fail --silent http://127.0.0.1:18080/healthz; then
-              docker logs voxytube-smoke
-              docker rm -f voxytube-smoke
-              exit 0
-            fi
+            if curl --fail --silent http://127.0.0.1:18080/healthz; then break; fi
             sleep 2
           done
-          docker logs voxytube-smoke
-          docker rm -f voxytube-smoke || true
-          exit 1
+          curl --fail --silent http://127.0.0.1:18080/healthz
+
+          BASE=http://127.0.0.1:18080
+          UNAUTHORIZED=$(curl --silent --output /dev/null --write-out '%{http_code}' "$BASE/api/v1/channels")
+          test "$UNAUTHORIZED" = "401"
+          curl --fail --silent -H "Authorization: Bearer smoke-test-token-with-more-than-32-characters" "$BASE/api/v1/channels" | grep -q '^\[\]$'
+
+          CHANNEL_ID=UC12345678901234567890
+          TOPIC="https://www.youtube.com/feeds/videos.xml?channel_id=$CHANNEL_ID"
+          docker exec voxytube-smoke gosu postgres psql -v ON_ERROR_STOP=1 -d voxytube -c \
+            "INSERT INTO websub_subscriptions (channel_id,topic_url,callback_url,secret,verify_token,state) VALUES ('$CHANNEL_ID','$TOPIC','https://example.invalid/websub','smoke-secret','smoke-verify-token','pending')"
+
+          CHALLENGE=$(curl --fail --silent --get \
+            --data-urlencode "hub.mode=subscribe" \
+            --data-urlencode "hub.challenge=voxytube-smoke-challenge" \
+            --data-urlencode "hub.topic=$TOPIC" \
+            --data-urlencode "hub.verify_token=smoke-verify-token" \
+            --data-urlencode "hub.lease_seconds=86400" \
+            "$BASE/websub")
+          test "$CHALLENGE" = "voxytube-smoke-challenge"
+
+          BODY='<feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015"><entry><yt:videoId>smoke-video-001</yt:videoId><yt:channelId>UC12345678901234567890</yt:channelId><title>Container smoke test</title><published>2026-11-13T10:00:00Z</published><updated>2026-11-13T10:00:00Z</updated><yt:channelTitle>VoxyTube CI</yt:channelTitle></entry></feed>'
+          SIGNATURE=$(printf '%s' "$BODY" | python3 -c 'import hashlib,hmac,sys; print("sha1="+hmac.new(b"smoke-secret",sys.stdin.buffer.read(),hashlib.sha1).hexdigest())')
+          for attempt in 1 2; do
+            STATUS=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              -X POST -H "X-Hub-Signature: $SIGNATURE" \
+              -H "Content-Type: application/atom+xml" --data-binary "$BODY" "$BASE/websub")
+            test "$STATUS" = "204"
+          done
+
+          for attempt in $(seq 1 30); do
+            if test -s /tmp/voxytube-smoke-body.json; then break; fi
+            sleep 1
+          done
+          test -s /tmp/voxytube-smoke-body.json
+          grep -q 'smoke-video-001' /tmp/voxytube-smoke-body.json
+          grep -q '^voxytube-[0-9][0-9]*$' /tmp/voxytube-smoke-key
+          test "$(cat /tmp/voxytube-smoke-count)" = "1"
+          curl --fail --silent -H "Authorization: Bearer smoke-test-token-with-more-than-32-characters" "$BASE/api/v1/events" |
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["counts"]["delivered"] == 1; assert len(d["recent"]) == 1'
+          echo "VoxyTube container, embedded PostgreSQL, API auth, WebSub challenge, HMAC, deduplication and webhook delivery smoke test passed."
