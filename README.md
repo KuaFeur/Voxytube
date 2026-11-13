@@ -25,7 +25,7 @@ The image contains VoxyTube (Rust) and PostgreSQL. PostgreSQL binds only to cont
 6. Start the server and keep `/home/container/data` persistent.
 7. Route the public HTTPS callback to the allocated HTTP port using Nginx or Cloudflare.
 
-The image is built and published to `ghcr.io/kuafeur/voxytube:latest` by GitHub Actions. PostgreSQL credentials are generated on first boot if no password is supplied. Never expose port 5432 publicly.
+The image is built and published to `ghcr.io/kuafeur/voxytube:latest` by GitHub Actions. After the first successful publish, set the GHCR package visibility to **Public** in GitHub Packages if Pelican nodes need to pull it without registry credentials. PostgreSQL credentials are generated on first boot if no password is supplied. Never expose port 5432 publicly.
 
 ## Management API
 

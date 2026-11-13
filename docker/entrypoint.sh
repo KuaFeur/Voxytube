@@ -38,6 +38,8 @@ fi
 if [[ ! -s "$PGDATA/PG_VERSION" ]]; then
   echo "[VoxyTube] Initializing embedded PostgreSQL..."
   gosu postgres "$PG_BIN/initdb" -D "$PGDATA" --username=postgres --auth-local=peer --auth-host=scram-sha-256
+else
+  chown postgres:postgres "$PGDATA"
 fi
 
 echo "[VoxyTube] Starting embedded PostgreSQL..."
