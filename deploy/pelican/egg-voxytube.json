@@ -117,6 +117,16 @@
       "user_editable": true,
       "rules": "required|string|url|max:512",
       "field_type": "text"
+    },
+    {
+      "name": "PostgreSQL Restore File",
+      "description": "Optional path to a pg_dump custom-format backup inside the persistent data volume. Restored once per filename on startup.",
+      "env_variable": "POSTGRES_RESTORE_FILE",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:512",
+      "field_type": "text"
     }
   ]
 }

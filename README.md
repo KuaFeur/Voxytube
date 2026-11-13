@@ -75,6 +75,8 @@ The PostgreSQL data directory is stored in `/home/container/data/postgres`. Keep
 
 Check `/healthz` for database connectivity. Inspect the container logs for subscription errors and delivery retry messages. A channel should show `active` from `GET /api/v1/channels` after YouTube completes its WebSub verification challenge. If delivery is disabled because `VOXY_WEBHOOK_URL` is empty, events remain durable in the outbox until a destination is configured.
 
+For backup and restore procedures, see [the operations guide](docs/OPERATIONS.md).
+
 ## Stability notice
 
 The V1 implementation is under active validation. A release must not be considered stable until CI builds and tests pass, the container is exercised on supported architectures, and an end-to-end WebSub/RSS/outbox test has been completed. YouTube and hub delivery behavior can change independently of VoxyTube.

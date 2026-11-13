@@ -62,8 +62,32 @@ else
   gosu postgres "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -c "CREATE ROLE \"$DB_USER\" WITH LOGIN PASSWORD '$DB_PASSWORD'"
 fi
 
-if ! gosu postgres "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q '^1$'; then
+if ! gosu postgres "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q '^1
+export DATABASE_URL="postgres://$DB_USER:$DB_PASSWORD@127.0.0.1:5432/$DB_NAME"
+export PORT="${PORT:-8080}"
+export DATABASE_MAX_CONNECTIONS="${DATABASE_MAX_CONNECTIONS:-10}"
+export RUST_LOG="${RUST_LOG:-voxytube=info,tower_http=info}"
+
+echo "[VoxyTube] Starting Rust service on port $PORT..."
+gosu voxytube /usr/local/bin/voxytube &
+APP_PID=$!
+set +e
+wait "$APP_PID"
+APP_STATUS=$?
+set -e
+cleanup "$APP_STATUS"
+; then
   gosu postgres "$PG_BIN/createdb" --owner="$DB_USER" "$DB_NAME"
+fi
+
+if [[ -n "${POSTGRES_RESTORE_FILE:-}" && -f "$POSTGRES_RESTORE_FILE" ]]; then
+  RESTORE_MARKER="$DATA_DIR/.restore_done.$(basename "$POSTGRES_RESTORE_FILE")"
+  if [[ ! -f "$RESTORE_MARKER" ]]; then
+    echo "[VoxyTube] Restoring PostgreSQL dump from $POSTGRES_RESTORE_FILE..."
+    gosu postgres "$PG_BIN/pg_restore" --clean --if-exists --no-owner --role="$DB_USER" --dbname="$DB_NAME" "$POSTGRES_RESTORE_FILE"
+    touch "$RESTORE_MARKER"
+    echo "[VoxyTube] PostgreSQL restore completed."
+  fi
 fi
 
 export DATABASE_URL="postgres://$DB_USER:$DB_PASSWORD@127.0.0.1:5432/$DB_NAME"

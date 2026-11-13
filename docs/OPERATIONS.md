@@ -24,7 +24,7 @@ A `202 Accepted` means the subscription request was sent. It is not proof that Y
 
 ## Backup and restore
 
-The entire `/home/container/data` directory contains the PostgreSQL cluster and generated password. Stop the Pelican server before making a raw directory-level backup.
+The PostgreSQL cluster is stored in `/home/container/data/postgres`. Stop the Pelican server before taking a raw directory-level backup. Restore a raw backup by replacing that directory while the server is stopped.
 
 For a logical backup while the server is running, execute inside the container:
 
@@ -33,13 +33,7 @@ gosu postgres pg_dump -Fc -d voxytube -f /tmp/voxytube.dump
 cp /tmp/voxytube.dump /home/container/data/voxytube.dump
 ```
 
-To restore, stop VoxyTube's Rust process, ensure PostgreSQL is running, then use:
-
-```bash
-gosu postgres pg_restore --clean --if-exists -d voxytube /home/container/data/voxytube.dump
-```
-
-Keep an additional copy outside the container. A persistent volume is not a backup by itself.
+To restore a custom-format dump, place it in the persistent data directory, set `POSTGRES_RESTORE_FILE=/home/container/data/voxytube.dump` in the Egg, and start the server. The entrypoint restores it before starting Rust, assigns restored objects to the VoxyTube database user, and creates a marker so the same dump is not applied on every restart. To deliberately apply that same dump again, stop the server and remove the matching `.restore_done.*` marker first. Keep an additional copy outside the container; a persistent volume is not a backup by itself.
 
 ## Delivery semantics
 
