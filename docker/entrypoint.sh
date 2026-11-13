@@ -27,8 +27,6 @@ fi
 
 mkdir -p "$DATA_DIR" "$PGDATA"
 chmod 0700 "$PGDATA"
-mkdir -p "$PG_RUN_DIR"
-chmod 0700 "$PG_RUN_DIR"
 if [[ "$(id -u)" -eq 0 ]]; then
   chown -R postgres:postgres "$PGDATA"
 elif [[ ! -w "$PGDATA" ]]; then
@@ -56,6 +54,10 @@ if [[ ! -s "$PGDATA/PG_VERSION" ]]; then
 else
   if [[ "$(id -u)" -eq 0 ]]; then chown postgres:postgres "$PGDATA"; fi
 fi
+
+# initdb requires PGDATA to be empty; create the socket directory only afterwards.
+run_pg mkdir -p "$PG_RUN_DIR"
+run_pg chmod 0700 "$PG_RUN_DIR"
 
 export PGUSER=postgres
 export PGHOST=127.0.0.1
