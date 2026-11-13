@@ -1,70 +1,77 @@
 # VoxyTube
 
-VoxyTube is an independent Rust service that receives YouTube upload notifications through WebSub and is designed to forward normalized events to Voxy. It does not connect to Discord itself.
+VoxyTube is an independent Rust service that receives YouTube upload notifications and delivers normalized events to a configured Voxy webhook. It does not connect to Discord itself.
 
-## Deployment: one Pelican/Pterodactyl container
+## V1 scope
 
-The official container bundles everything required to run the service:
+- WebSub subscriptions with verification challenges, lease renewal, and HMAC-SHA1 validation.
+- RSS reconciliation using YouTube channel feeds, conditional requests (ETag / Last-Modified), and bounded retry backoff.
+- PostgreSQL-backed deduplication and durable event outbox.
+- Authenticated channel management API.
+- Retried event delivery with an idempotency key.
+- One Pelican/Pterodactyl container containing the Rust binary and PostgreSQL.
 
-- VoxyTube, compiled in Rust.
-- PostgreSQL, running locally inside the same container.
-- An entrypoint that initializes PostgreSQL on first boot, starts both processes, and shuts them down cleanly.
-- Persistent database storage under `/home/container/data`.
+No YouTube page scraping, yt-dlp, or YouTube Data API key is used.
 
-**No external PostgreSQL server, Redis instance, or separate database container is required.** PostgreSQL listens only on the container loopback interface and is not exposed as a game-server allocation. Only the VoxyTube HTTP port needs to be allocated and exposed through HTTPS for YouTube WebSub callbacks.
+## One-container deployment
 
-The PostgreSQL password is generated automatically and persisted in the data volume when `POSTGRES_PASSWORD` is left empty. Set that variable only if you want to provide your own password.
+The image contains VoxyTube (Rust) and PostgreSQL. PostgreSQL binds only to container loopback; it is not a separately exposed service. Persistent state lives in `/home/container/data`.
 
-### Install with Pelican / Pterodactyl
+1. Import [the Pelican Egg](deploy/pelican/egg-voxytube.json).
+2. Create a server from the Egg and allocate its HTTP port (8080 by default).
+3. Set `PUBLIC_CALLBACK_URL` to the public HTTPS URL ending in `/websub`.
+4. Set `API_TOKEN` to a random value of at least 32 characters.
+5. Set `VOXY_WEBHOOK_URL` to the endpoint that Voxy will expose to receive event JSON. Optionally set `VOXY_WEBHOOK_TOKEN`.
+6. Start the server and keep `/home/container/data` persistent.
+7. Route the public HTTPS callback to the allocated HTTP port using Nginx or Cloudflare.
 
-1. Import [`deploy/pelican/egg-voxytube.json`](deploy/pelican/egg-voxytube.json) into the panel.
-2. Create a server using the VoxyTube Egg.
-3. Allocate the HTTP port (8080 by default).
-4. Start the server and keep its data volume persistent.
-5. Configure a public HTTPS callback URL pointing to the allocated HTTP port through your reverse proxy.
+The image is built and published to `ghcr.io/kuafeur/voxytube:latest` by GitHub Actions. PostgreSQL credentials are generated on first boot if no password is supplied. Never expose port 5432 publicly.
 
-The image is published to `ghcr.io/kuafeur/voxytube:latest` by the GitHub Actions container workflow on pushes to `main`. Version tags are also published.
+## Management API
 
-### Build the container yourself
+All management endpoints require `Authorization: Bearer <API_TOKEN>`.
+
+- `POST /api/v1/channels` — JSON body: `{"channel_id":"UC..."}`; starts an asynchronous WebSub subscription.
+- `GET /api/v1/channels` — lists configured channels and their subscription state.
+- `DELETE /api/v1/channels/{channel_id}` — requests unsubscribe and removes the channel.
+- `GET /healthz` and `GET /readyz` — database health checks.
+- `GET /websub` and `POST /websub` — public WebSub callback.
+
+Example:
 
 ```bash
-docker build -t voxytube:local .
-docker run -d \
-  --name voxytube \
-  -p 8080:8080 \
-  -v voxytube-data:/home/container/data \
-  voxytube:local
+curl -X POST http://127.0.0.1:8080/api/v1/channels \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"channel_id":"UCxxxxxxxxxxxxxxxxxxxxxx"}'
 ```
 
-Do not publish port 5432. It is intentionally bound to localhost inside the container.
+## Event contract
+
+A successful delivery is a JSON object:
+
+```json
+{
+  "event": "youtube.video.published",
+  "video_id": "VIDEO_ID",
+  "channel_id": "CHANNEL_ID",
+  "channel_title": "Channel name",
+  "title": "Video title",
+  "url": "https://www.youtube.com/watch?v=VIDEO_ID",
+  "published_at": "2026-11-13T10:00:00Z",
+  "source": "websub"
+}
+```
+
+VoxyTube sends `Idempotency-Key: voxytube-<outbox-id>`. The receiving endpoint should honor this key to avoid duplicate side effects if a network timeout occurs after the receiver accepted a request.
 
 ## Local development
 
-For development outside the bundled container, install Rust stable (edition 2024) and PostgreSQL 14 or newer.
+Use Rust stable (edition 2024) and PostgreSQL 14+. Create a database, copy `.env.example` to `.env`, set `DATABASE_URL`, `PUBLIC_CALLBACK_URL` and `API_TOKEN`, then run `cargo run`.
 
-1. Create a PostgreSQL database named `voxytube`.
-2. Copy `.env.example` to `.env` and set `DATABASE_URL`.
-3. Run:
+## Stability notice
 
-```bash
-cargo run
-```
-
-The HTTP server listens on `0.0.0.0:8080` by default.
-
-## HTTP endpoints currently implemented
-
-- `GET /healthz` — checks database connectivity.
-- `GET /websub` — responds to WebSub subscription verification challenges.
-- `POST /websub` — parses and persists YouTube Atom notifications.
-
-The WebSub callback must be reachable over public HTTPS. Put the service behind a reverse proxy such as Nginx or Cloudflare.
-
-## Project status
-
-VoxyTube is still under active development. The current repository contains the initial WebSub receiver and PostgreSQL persistence layer, plus the all-in-one container packaging. RSS reconciliation, subscription lifecycle management, authenticated channel management, durable event delivery to Voxy, and full security/compatibility tests are not yet complete. The container packaging must also pass its first CI build before it should be considered ready for deployment.
-
-No YouTube page scraping or YouTube Data API integration is planned.
+The V1 implementation is under active validation. A release must not be considered stable until CI builds and tests pass, the container is exercised on supported architectures, and an end-to-end WebSub/RSS/outbox test has been completed. YouTube and hub delivery behavior can change independently of VoxyTube.
 
 ## License
 
