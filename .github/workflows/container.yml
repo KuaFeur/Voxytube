@@ -117,7 +117,7 @@ jobs:
             docker logs voxytube-smoke 2>&1 || true
             exit 1
           fi
-          test "$(docker exec voxytube-smoke gosu postgres psql -d voxytube -tAc 'SHOW server_encoding' | tr -d '[:space:]')" = "UTF8"
+          test "$(docker exec voxytube-smoke gosu postgres psql -h 127.0.0.1 -d voxytube -tAc 'SHOW server_encoding' | tr -d '[:space:]')" = "UTF8"
 
           BASE=http://127.0.0.1:18080
           UNAUTHORIZED=$(curl --silent --output /dev/null --write-out '%{http_code}' "$BASE/api/v1/channels")
@@ -126,7 +126,7 @@ jobs:
 
           CHANNEL_ID=UC12345678901234567890
           TOPIC="https://www.youtube.com/feeds/videos.xml?channel_id=$CHANNEL_ID"
-          docker exec voxytube-smoke gosu postgres psql -v ON_ERROR_STOP=1 -d voxytube -c \
+          docker exec voxytube-smoke gosu postgres psql -h 127.0.0.1 -v ON_ERROR_STOP=1 -d voxytube -c \
             "INSERT INTO websub_subscriptions (channel_id,topic_url,callback_url,secret,verify_token,state) VALUES ('$CHANNEL_ID','$TOPIC','https://example.invalid/websub','smoke-secret','smoke-verify-token','pending')"
 
           CHALLENGE=$(curl --fail --silent --get \
