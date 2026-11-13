@@ -69,6 +69,12 @@ VoxyTube sends `Idempotency-Key: voxytube-<outbox-id>`. The receiving endpoint s
 
 Use Rust stable (edition 2024) and PostgreSQL 14+. Create a database, copy `.env.example` to `.env`, set `DATABASE_URL`, `PUBLIC_CALLBACK_URL` and `API_TOKEN`, then run `cargo run`.
 
+## Operations and backups
+
+The PostgreSQL data directory is stored in `/home/container/data/postgres`. Keep this directory on Pelican's persistent server volume; deleting it resets all channel subscriptions and delivery history. Stop the server before taking a raw filesystem backup. For a live logical backup, run `pg_dump -Fc -d voxytube` as the `postgres` OS user from inside the container and copy the resulting dump to persistent storage. Restore with `pg_restore` while VoxyTube is stopped and PostgreSQL is running, after first taking a separate backup of the current data.
+
+Check `/healthz` for database connectivity. Inspect the container logs for subscription errors and delivery retry messages. A channel should show `active` from `GET /api/v1/channels` after YouTube completes its WebSub verification challenge. If delivery is disabled because `VOXY_WEBHOOK_URL` is empty, events remain durable in the outbox until a destination is configured.
+
 ## Stability notice
 
 The V1 implementation is under active validation. A release must not be considered stable until CI builds and tests pass, the container is exercised on supported architectures, and an end-to-end WebSub/RSS/outbox test has been completed. YouTube and hub delivery behavior can change independently of VoxyTube.
