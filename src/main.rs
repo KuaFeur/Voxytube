@@ -151,15 +151,11 @@ async fn remove_channel(
     axum::extract::Path(channel_id): axum::extract::Path<String>,
 ) -> Result<StatusCode, StatusCode> {
     if !authorized(&state, &headers) { return Err(StatusCode::UNAUTHORIZED); }
-    let row = sqlx::query("SELECT topic_url FROM websub_subscriptions WHERE channel_id=$1")
+    let exists = sqlx::query("SELECT 1 FROM websub_subscriptions WHERE channel_id=$1")
         .bind(&channel_id).fetch_optional(&state.db).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let Some(row) = row else { return Ok(StatusCode::NO_CONTENT) };
-    let topic: String = sqlx::Row::try_get(&row, "topic_url").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let _ = state.http.post(&state.config.hub_url).form(&[
-        ("hub.mode", "unsubscribe"), ("hub.topic", topic.as_str()),
-        ("hub.callback", state.config.callback_url.as_str()),
-    ]).send().await;
+    if exists.is_none() { return Ok(StatusCode::NO_CONTENT); }
+    request_subscription(&state, &channel_id, "unsubscribe").await;
     sqlx::query("UPDATE websub_subscriptions SET state='expired', lease_expires_at=NULL, updated_at=NOW() WHERE channel_id=$1")
         .bind(channel_id).execute(&state.db).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
