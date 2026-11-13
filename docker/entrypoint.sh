@@ -50,7 +50,7 @@ fi
 
 if [[ ! -s "$PGDATA/PG_VERSION" ]]; then
   echo "[VoxyTube] Initializing embedded PostgreSQL..."
-  run_pg "$PG_BIN/initdb" -D "$PGDATA" --username=postgres --encoding=UTF8 --auth-local=trust --auth-host=scram-sha-256
+  run_pg "$PG_BIN/initdb" -D "$PGDATA" --username=postgres --encoding=UTF8 --auth-local=trust --auth-host=trust
 else
   if [[ "$(id -u)" -eq 0 ]]; then chown postgres:postgres "$PGDATA"; fi
 fi
