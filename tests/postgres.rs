@@ -63,6 +63,45 @@ async fn migrations_and_outbox_are_idempotent() {
         .expect("count column");
     assert_eq!(outbox_count, 1);
 
+    sqlx::query("UPDATE event_outbox SET status='dead', attempts=20 WHERE video_id=$1")
+        .bind(&video_id)
+        .execute(&pool)
+        .await
+        .expect("mark event dead");
+    let retried = sqlx::query("UPDATE event_outbox SET status='pending', attempts=0, next_attempt_at=NOW(), locked_at=NULL, last_error=NULL WHERE video_id=$1 AND status='dead'")
+        .bind(&video_id)
+        .execute(&pool)
+        .await
+        .expect("requeue dead event");
+    assert_eq!(retried.rows_affected(), 1);
+
+    let channel_id = format!("UC{}", Uuid::new_v4().simple());
+    let topic = format!("https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}");
+    sqlx::query("INSERT INTO websub_subscriptions (channel_id, topic_url, callback_url, verify_token) VALUES ($1,$2,$3,$4)")
+        .bind(&channel_id)
+        .bind(&topic)
+        .bind("https://example.test/websub")
+        .bind(Uuid::new_v4().to_string())
+        .execute(&pool)
+        .await
+        .expect("create subscription");
+    let unsubscribing = sqlx::query("UPDATE websub_subscriptions SET state='unsubscribing' WHERE channel_id=$1")
+        .bind(&channel_id)
+        .execute(&pool)
+        .await
+        .expect("allow retryable unsubscribe state");
+    assert_eq!(unsubscribing.rows_affected(), 1);
+    let invalid_state = sqlx::query("UPDATE websub_subscriptions SET state='invalid' WHERE channel_id=$1")
+        .bind(&channel_id)
+        .execute(&pool)
+        .await;
+    assert!(invalid_state.is_err(), "subscription state constraint must reject unknown states");
+
+    sqlx::query("DELETE FROM websub_subscriptions WHERE channel_id=$1")
+        .bind(&channel_id)
+        .execute(&pool)
+        .await
+        .expect("cleanup subscription");
     sqlx::query("DELETE FROM youtube_videos WHERE video_id=$1")
         .bind(video_id)
         .execute(&pool)

@@ -38,12 +38,14 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
       - name: Compile
         run: cargo check --all-targets
       - name: Test
         run: cargo test --all-targets
       - name: Clippy
-        run: cargo clippy --all-targets -- -A warnings
+        run: cargo clippy --all-targets -- -D warnings
   egg-json:
     runs-on: ubuntu-latest
     steps:
