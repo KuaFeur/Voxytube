@@ -49,11 +49,12 @@ fi
 
 if [[ ! -s "$PGDATA/PG_VERSION" ]]; then
   echo "[VoxyTube] Initializing embedded PostgreSQL..."
-  run_pg "$PG_BIN/initdb" -D "$PGDATA" --username=postgres --encoding=UTF8 --auth-local=peer --auth-host=scram-sha-256
+  run_pg "$PG_BIN/initdb" -D "$PGDATA" --username=postgres --encoding=UTF8 --auth-local=trust --auth-host=scram-sha-256
 else
   if [[ "$(id -u)" -eq 0 ]]; then chown postgres:postgres "$PGDATA"; fi
 fi
 
+export PGUSER=postgres
 echo "[VoxyTube] Starting embedded PostgreSQL..."
 run_pg "$PG_BIN/pg_ctl" -D "$PGDATA" \
   -o "-c listen_addresses=127.0.0.1 -c port=5432 -c max_connections=${POSTGRES_MAX_CONNECTIONS:-30}" \
