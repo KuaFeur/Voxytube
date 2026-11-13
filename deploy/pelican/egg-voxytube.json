@@ -57,6 +57,66 @@
       "user_editable": true,
       "rules": "nullable|string|min:16|max:128",
       "field_type": "text"
+    },
+    {
+      "name": "Public HTTPS Callback URL",
+      "description": "Public URL YouTube calls for WebSub. Must end in /websub.",
+      "env_variable": "PUBLIC_CALLBACK_URL",
+      "default_value": "https://youtube.example.com/websub",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|url|max:512",
+      "field_type": "text"
+    },
+    {
+      "name": "Management API Token",
+      "description": "Bearer token for channel management; use at least 32 random characters.",
+      "env_variable": "API_TOKEN",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": "required|string|min:32|max:256",
+      "field_type": "text"
+    },
+    {
+      "name": "Voxy Webhook URL",
+      "description": "Endpoint receiving normalized video events. Leave empty to disable delivery.",
+      "env_variable": "VOXY_WEBHOOK_URL",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:1024",
+      "field_type": "text"
+    },
+    {
+      "name": "Voxy Webhook Token",
+      "description": "Optional bearer token sent to Voxy.",
+      "env_variable": "VOXY_WEBHOOK_TOKEN",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": "nullable|string|max:512",
+      "field_type": "text"
+    },
+    {
+      "name": "RSS Fallback Interval",
+      "description": "RSS reconciliation interval in seconds (minimum 60).",
+      "env_variable": "RSS_INTERVAL_SECONDS",
+      "default_value": "300",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|min:60|max:86400",
+      "field_type": "text"
+    },
+    {
+      "name": "WebSub Hub URL",
+      "description": "WebSub hub endpoint.",
+      "env_variable": "WEBSUB_HUB_URL",
+      "default_value": "https://pubsubhubbub.appspot.com/subscribe",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|url|max:512",
+      "field_type": "text"
     }
   ]
 }
