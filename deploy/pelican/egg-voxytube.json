@@ -1,0 +1,62 @@
+{
+  "_comment": "VoxyTube - single-container Egg with Rust service and embedded PostgreSQL",
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "exported_at": "2026-11-13T00:00:00+00:00",
+  "name": "VoxyTube",
+  "author": "Kua <https://github.com/KuaFeur>",
+  "description": "YouTube WebSub notification gateway. Rust and PostgreSQL are bundled in one container.",
+  "features": null,
+  "docker_images": {
+    "ghcr.io/kuafeur/voxytube:latest": "ghcr.io/kuafeur/voxytube:latest"
+  },
+  "file_denylist": [],
+  "startup": "bash /usr/local/bin/voxytube-entrypoint",
+  "config": {
+    "files": "{}",
+    "startup": "{\"done\":\"VoxyTube HTTP server started\"}",
+    "logs": "{}",
+    "stop": "^C"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\n# The container image already contains the Rust binary and PostgreSQL.\n# No additional installation is required.\nexit 0",
+      "container": "debian:bookworm-slim",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "HTTP Port",
+      "description": "Internal HTTP port. Allocate this port in Pelican and expose it through HTTPS.",
+      "env_variable": "PORT",
+      "default_value": "8080",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|between:1,65535",
+      "field_type": "text"
+    },
+    {
+      "name": "Rust Log Level",
+      "description": "Tracing filter, for example voxytube=info,tower_http=info.",
+      "env_variable": "RUST_LOG",
+      "default_value": "voxytube=info,tower_http=info",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:255",
+      "field_type": "text"
+    },
+    {
+      "name": "PostgreSQL Database Password",
+      "description": "Optional. Leave empty to generate and persist a random local password automatically.",
+      "env_variable": "POSTGRES_PASSWORD",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": "nullable|string|min:16|max:128",
+      "field_type": "text"
+    }
+  ]
+}
