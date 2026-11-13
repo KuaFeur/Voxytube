@@ -8,18 +8,12 @@ DB_NAME="${POSTGRES_DB:-voxytube}"
 DB_USER="${POSTGRES_USER:-voxytube}"
 DB_PASSWORD_FILE="$DATA_DIR/.postgres_password"
 
-# Pelican/Wings may start an image with an unexpected filesystem state.
-# Ensure the system account exists before any ownership change or gosu call.
-if ! getent group postgres >/dev/null 2>&1; then
-  groupadd --system postgres
-fi
-if ! getent passwd postgres >/dev/null 2>&1; then
-  useradd --system --gid postgres --home-dir /var/lib/postgresql --shell /usr/sbin/nologin postgres
-fi
-if ! id postgres >/dev/null 2>&1; then
-  echo "[VoxyTube] PostgreSQL system account could not be created." >&2
-  exit 1
-fi
+# Pelican/Wings commonly runs game containers as an unprivileged UID.
+# Use the postgres system account only when the entrypoint is actually root;
+# otherwise PostgreSQL runs as the container UID that owns the mounted volume.
+run_pg() {
+  if [[ "$(id -u)" -eq 0 ]]; then gosu postgres "$@"; else "$@"; fi
+}
 
 if [[ -z "$PG_BIN" || ! -x "$PG_BIN/initdb" ]]; then
   echo "[VoxyTube] PostgreSQL binaries not found." >&2
@@ -52,11 +46,11 @@ if [[ ! -s "$PGDATA/PG_VERSION" ]]; then
   echo "[VoxyTube] Initializing embedded PostgreSQL..."
   gosu postgres "$PG_BIN/initdb" -D "$PGDATA" --username=postgres --encoding=UTF8 --auth-local=peer --auth-host=scram-sha-256
 else
-  chown postgres:postgres "$PGDATA"
+  if [[ "$(id -u)" -eq 0 ]]; then chown postgres:postgres "$PGDATA"; fi
 fi
 
 echo "[VoxyTube] Starting embedded PostgreSQL..."
-gosu postgres "$PG_BIN/pg_ctl" -D "$PGDATA" \
+run_pg "$PG_BIN/pg_ctl" -D "$PGDATA" \
   -o "-c listen_addresses=127.0.0.1 -c port=5432 -c max_connections=${POSTGRES_MAX_CONNECTIONS:-30}" \
   -w start
 
@@ -68,26 +62,26 @@ cleanup() {
     wait "$APP_PID" || true
   fi
   echo "[VoxyTube] Stopping embedded PostgreSQL..."
-  gosu postgres "$PG_BIN/pg_ctl" -D "$PGDATA" -m fast -w stop || true
+  run_pg "$PG_BIN/pg_ctl" -D "$PGDATA" -m fast -w stop || true
   exit "$status"
 }
 trap 'cleanup 0' TERM INT
 
-if gosu postgres "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$DB_USER'" | grep -q '^1$'; then
-  gosu postgres "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -c "ALTER ROLE \"$DB_USER\" WITH LOGIN PASSWORD '$DB_PASSWORD'"
+if run_pg "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$DB_USER'" | grep -q '^1$'; then
+  run_pg "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -c "ALTER ROLE \"$DB_USER\" WITH LOGIN PASSWORD '$DB_PASSWORD'"
 else
-  gosu postgres "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -c "CREATE ROLE \"$DB_USER\" WITH LOGIN PASSWORD '$DB_PASSWORD'"
+  run_pg "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -c "CREATE ROLE \"$DB_USER\" WITH LOGIN PASSWORD '$DB_PASSWORD'"
 fi
 
-if ! gosu postgres "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q '^1$'; then
-  gosu postgres "$PG_BIN/createdb" --owner="$DB_USER" "$DB_NAME"
+if ! run_pg "$PG_BIN/psql" -v ON_ERROR_STOP=1 --dbname=postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q '^1$'; then
+  run_pg "$PG_BIN/createdb" --owner="$DB_USER" "$DB_NAME"
 fi
 
 if [[ -n "${POSTGRES_RESTORE_FILE:-}" && -f "$POSTGRES_RESTORE_FILE" ]]; then
   RESTORE_MARKER="$DATA_DIR/.restore_done.$(basename "$POSTGRES_RESTORE_FILE")"
   if [[ ! -f "$RESTORE_MARKER" ]]; then
     echo "[VoxyTube] Restoring PostgreSQL dump from $POSTGRES_RESTORE_FILE..."
-    gosu postgres "$PG_BIN/pg_restore" --clean --if-exists --no-owner --role="$DB_USER" --dbname="$DB_NAME" "$POSTGRES_RESTORE_FILE"
+    run_pg "$PG_BIN/pg_restore" --clean --if-exists --no-owner --role="$DB_USER" --dbname="$DB_NAME" "$POSTGRES_RESTORE_FILE"
     touch "$RESTORE_MARKER"
     echo "[VoxyTube] PostgreSQL restore completed."
   fi
@@ -99,7 +93,11 @@ export DATABASE_MAX_CONNECTIONS="${DATABASE_MAX_CONNECTIONS:-10}"
 export RUST_LOG="${RUST_LOG:-voxytube=info,tower_http=info}"
 
 echo "[VoxyTube] Starting Rust service on port $PORT..."
-gosu voxytube /usr/local/bin/voxytube &
+if [[ "$(id -u)" -eq 0 ]]; then
+  gosu voxytube /usr/local/bin/voxytube &
+else
+  /usr/local/bin/voxytube &
+fi
 APP_PID=$!
 set +e
 wait "$APP_PID"
