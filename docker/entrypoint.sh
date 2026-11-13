@@ -8,6 +8,19 @@ DB_NAME="${POSTGRES_DB:-voxytube}"
 DB_USER="${POSTGRES_USER:-voxytube}"
 DB_PASSWORD_FILE="$DATA_DIR/.postgres_password"
 
+# Pelican/Wings may start an image with an unexpected filesystem state.
+# Ensure the system account exists before any ownership change or gosu call.
+if ! getent group postgres >/dev/null 2>&1; then
+  groupadd --system postgres
+fi
+if ! getent passwd postgres >/dev/null 2>&1; then
+  useradd --system --gid postgres --home-dir /var/lib/postgresql --shell /usr/sbin/nologin postgres
+fi
+if ! id postgres >/dev/null 2>&1; then
+  echo "[VoxyTube] PostgreSQL system account could not be created." >&2
+  exit 1
+fi
+
 if [[ -z "$PG_BIN" || ! -x "$PG_BIN/initdb" ]]; then
   echo "[VoxyTube] PostgreSQL binaries not found." >&2
   exit 1
