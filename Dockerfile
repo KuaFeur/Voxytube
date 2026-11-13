@@ -47,6 +47,8 @@ RUN chmod 0755 /usr/local/bin/voxytube /usr/local/bin/voxytube-entrypoint
 
 WORKDIR /home/container
 EXPOSE 8080
-VOLUME ["/home/container/data"]
+# Do not declare /home/container/data as a Docker VOLUME: Pelican already
+# bind-mounts /home/container persistently. A nested anonymous volume would
+# mask that directory and be replaced whenever Pelican recreates the container.
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/usr/local/bin/voxytube-entrypoint"]
