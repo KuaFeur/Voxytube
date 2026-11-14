@@ -1,6 +1,6 @@
 [package]
 name = "voxytube"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 description = "A reliable, destination-agnostic YouTube notification gateway built with Rust."
 license = "Apache-2.0"
