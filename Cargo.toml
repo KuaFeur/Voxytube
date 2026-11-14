@@ -2,7 +2,7 @@
 name = "voxytube"
 version = "0.1.0"
 edition = "2024"
-description = "A reliable YouTube notification gateway for Voxy, built with Rust."
+description = "A reliable, destination-agnostic YouTube notification gateway built with Rust."
 license = "Apache-2.0"
 repository = "https://github.com/KuaFeur/Voxytube"
 readme = "README.md"
