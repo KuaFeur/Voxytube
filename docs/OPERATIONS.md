@@ -5,7 +5,7 @@
 - Keep the Pelican server's `/home/container/data` directory persistent.
 - Set `PUBLIC_CALLBACK_URL` to the public HTTPS callback ending in `/websub`.
 - Set a unique `API_TOKEN` with at least 32 random characters.
-- Set `VOXY_WEBHOOK_URL` to the Voxy receiver endpoint. Set `VOXY_WEBHOOK_TOKEN` if that endpoint requires bearer authentication.
+- Set `WEBHOOK_URL` to the HTTP(S) endpoint that receives events. Set `WEBHOOK_TOKEN` if that endpoint requires Bearer authentication.
 - Route the public callback URL to the allocated VoxyTube HTTP port through HTTPS.
 - Do not expose PostgreSQL port 5432.
 
@@ -33,7 +33,7 @@ gosu postgres pg_dump -Fc -d voxytube -f /tmp/voxytube.dump
 cp /tmp/voxytube.dump /home/container/data/voxytube.dump
 ```
 
-To restore a custom-format dump, place it in the persistent data directory, set `POSTGRES_RESTORE_FILE=/home/container/data/voxytube.dump` in the Egg, and start the server. The entrypoint restores it before starting Rust, assigns restored objects to the VoxyTube database user, and creates a marker so the same dump is not applied on every restart. To deliberately apply that same dump again, stop the server and remove the matching `.restore_done.*` marker first. Keep an additional copy outside the container; a persistent volume is not a backup by itself.
+To restore a custom-format dump, place it in the persistent data directory, set `POSTGRES_RESTORE_FILE=/home/container/data/voxytube.dump` in the Egg, and start the server. The entrypoint restores it before starting Rust, assigns restored objects to the application database user, and creates a marker so the same dump is not applied on every restart. To deliberately apply that same dump again, stop the server and remove the matching `.restore_done.*` marker first. Keep an additional copy outside the container; a persistent volume is not a backup by itself.
 
 ## Delivery semantics
 

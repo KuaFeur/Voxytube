@@ -356,27 +356,27 @@ async fn delivery_worker(state: AppState) {
     let mut interval = tokio::time::interval(Duration::from_secs(3));
     loop {
         interval.tick().await;
-        if state.config.voxy_webhook_url.is_empty() { continue; }
+        if state.config.webhook_url.is_empty() { continue; }
         let row = sqlx::query("WITH candidate AS (SELECT id FROM event_outbox WHERE (status='pending' OR (status='processing' AND locked_at < NOW() - INTERVAL '2 minutes')) AND next_attempt_at<=NOW() ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE event_outbox SET status='processing', locked_at=NOW(), attempts=attempts+1 FROM candidate WHERE event_outbox.id=candidate.id RETURNING event_outbox.id,event_outbox.payload,event_outbox.attempts")
             .fetch_optional(&state.db).await;
         let Ok(Some(row)) = row else { continue };
         let id: i64 = sqlx::Row::try_get(&row, "id").unwrap_or_default();
         let payload: serde_json::Value = sqlx::Row::try_get(&row, "payload").unwrap_or_default();
         let attempts: i32 = sqlx::Row::try_get(&row, "attempts").unwrap_or(1);
-        let mut request = state.http.post(&state.config.voxy_webhook_url)
+        let mut request = state.http.post(&state.config.webhook_url)
             .header("Idempotency-Key", format!("voxytube-{id}")).json(&payload);
-        if let Some(token) = &state.config.voxy_webhook_token {
+        if let Some(token) = &state.config.webhook_token {
             request = request.bearer_auth(token);
         }
         match request.send().await {
             Ok(resp) if resp.status().is_success() => {
                 let _ = sqlx::query("UPDATE event_outbox SET status='delivered',delivered_at=NOW(),last_error=NULL WHERE id=$1")
                     .bind(id).execute(&state.db).await;
-                info!(outbox_id=id,"event delivered to Voxy");
+                info!(outbox_id=id,"event delivered to destination");
             }
             Ok(resp) => {
                 let delay = (5_i64 * 2_i64.pow(attempts.clamp(1,10) as u32)).min(3600);
-                let message = format!("Voxy endpoint returned HTTP {}", resp.status());
+                let message = format!("destination endpoint returned HTTP {}", resp.status());
                 let status = if attempts >= 20 { "dead" } else { "pending" };
                 let _ = sqlx::query("UPDATE event_outbox SET status=$2,last_error=$3,next_attempt_at=NOW()+($4 * INTERVAL '1 second') WHERE id=$1")
                     .bind(id).bind(status).bind(message).bind(delay).execute(&state.db).await;

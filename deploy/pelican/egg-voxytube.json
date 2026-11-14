@@ -79,9 +79,9 @@
       "field_type": "password"
     },
     {
-      "name": "Voxy Webhook URL",
+      "name": "Destination Webhook URL",
       "description": "Endpoint receiving normalized video events. Leave empty to disable delivery.",
-      "env_variable": "VOXY_WEBHOOK_URL",
+      "env_variable": "WEBHOOK_URL",
       "default_value": "",
       "user_viewable": true,
       "user_editable": true,
@@ -89,9 +89,9 @@
       "field_type": "text"
     },
     {
-      "name": "Voxy Webhook Token",
-      "description": "Optional bearer token sent to Voxy.",
-      "env_variable": "VOXY_WEBHOOK_TOKEN",
+      "name": "Destination Webhook Token",
+      "description": "Optional bearer token sent to the destination endpoint.",
+      "env_variable": "WEBHOOK_TOKEN",
       "default_value": "",
       "user_viewable": false,
       "user_editable": true,
