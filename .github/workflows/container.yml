@@ -102,7 +102,7 @@ jobs:
             --add-host=host.docker.internal:host-gateway \
             -e PUBLIC_CALLBACK_URL=https://example.invalid/websub \
             -e API_TOKEN=smoke-test-token-with-more-than-32-characters \
-            -e VOXY_WEBHOOK_URL=http://host.docker.internal:18081/receive \
+            -e WEBHOOK_URL=http://host.docker.internal:18081/receive \
             -p 18080:8080 ghcr.io/kuafeur/voxytube:latest
 
           READY=0
