@@ -49,12 +49,41 @@ It is **destination-agnostic**. Connect it to your own backend, automation workf
 ## How it works
 
 ```mermaid
-flowchart LR
-    YT[YouTube] -->|WebSub push| VT[VoxyTube]
-    YT -.->|RSS fallback| VT
-    VT --> DB[(PostgreSQL)]
-    DB --> OB[Durable outbox]
-    OB -->|HTTP POST| DEST[Any HTTP endpoint]
+flowchart TB
+    subgraph SOURCES["YouTube notification sources"]
+        YT["YouTube"]
+        HUB["WebSub hub"]
+        YT -->|"Upload notification"| HUB
+        YT -.->|"Atom feed · fallback"| RSS["RSS worker"]
+    end
+
+    subgraph VOXY["VoxyTube · Rust service"]
+        CB["Public callback<br/>GET /websub · POST /websub"]
+        SUB["WebSub subscription worker"]
+        API["HTTP API"]
+        CORE["Validation · normalization<br/>deduplication"]
+        DELIVERY["Async delivery worker"]
+
+        HUB -->|"WebSub POST"| CB
+        SUB <-->|"Subscribe · renew · challenge"| HUB
+        CB --> CORE
+        RSS --> CORE
+        API --> CORE
+        CORE -->|"Persist event"| DB[("Embedded PostgreSQL")]
+        DB --> OUTBOX[("Transactional outbox")]
+        OUTBOX --> DELIVERY
+    end
+
+    DELIVERY -->|"HTTP POST · JSON<br/>Idempotency-Key"| DEST["Your HTTP endpoint"]
+
+    classDef source fill:#e8f1ff,stroke:#3974c6,color:#16345c,stroke-width:1.5px
+    classDef service fill:#f2eaff,stroke:#8755c5,color:#38205c,stroke-width:1.5px
+    classDef storage fill:#e9f7ee,stroke:#39875a,color:#17452b,stroke-width:1.5px
+    classDef destination fill:#fff2df,stroke:#c17a24,color:#603b0e,stroke-width:1.5px
+    class YT,HUB,RSS source
+    class CB,SUB,API,CORE,DELIVERY service
+    class DB,OUTBOX storage
+    class DEST destination
 ```
 
 1. Register a YouTube channel through the management API.
