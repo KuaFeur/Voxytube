@@ -1,58 +1,155 @@
+<!--
+  VoxyTube — YouTube event gateway
+  Documentation: https://voxytube.gitbook.io
+-->
+
+<div align="center">
+
 # VoxyTube
 
-VoxyTube is an independent Rust service that receives YouTube upload notifications and delivers normalized events to a configured HTTP webhook endpoint. It does not perform destination-specific actions; it only delivers normalized HTTP events.
+### A reliable, self-hosted YouTube event gateway.
 
-## V1 scope
+Receive YouTube upload notifications and forward clean, normalized events to any HTTP webhook — without tying your workflow to a specific platform.
 
-- WebSub subscriptions with verification challenges, lease renewal, and HMAC-SHA1 validation.
-- Best-effort RSS reconciliation using YouTube channel feeds, conditional requests (ETag / Last-Modified), and bounded retry backoff. RSS can only see entries YouTube still exposes in its feed; WebSub remains the primary near-real-time source.
-- PostgreSQL-backed deduplication and durable event outbox.
-- Authenticated channel management API.
-- Retried event delivery with an idempotency key.
-- One Pelican/Pterodactyl container containing the Rust binary and PostgreSQL.
+[**Documentation**](https://voxytube.gitbook.io) · [GitHub](https://github.com/KuaFeur/Voxytube) · [Report an issue](https://github.com/KuaFeur/Voxytube/issues)
 
-No YouTube page scraping, yt-dlp, or YouTube Data API key is used.
+<br />
 
-## One-container deployment
+[![CI](https://github.com/KuaFeur/Voxytube/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/KuaFeur/Voxytube/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/KuaFeur/Voxytube)](LICENSE)
+[![Rust](https://img.shields.io/badge/built%20with-Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Docker](https://img.shields.io/badge/container-GHCR-2496ED?logo=docker&logoColor=white)](https://github.com/KuaFeur/Voxytube/pkgs/container/voxytube)
 
-The image contains VoxyTube (Rust) and PostgreSQL. PostgreSQL binds only to container loopback; it is not a separately exposed service. Persistent state lives in `/home/container/data`.
+</div>
 
-1. Import [the Pelican Egg](deploy/pelican/egg-voxytube.json).
-2. Create a server from the Egg and allocate its HTTP port (8080 by default).
-3. Set `PUBLIC_CALLBACK_URL` to the public HTTPS URL ending in `/websub`.
-4. Set `API_TOKEN` to a random value of at least 32 characters.
-5. Set `WEBHOOK_URL` to the HTTP(S) endpoint that will receive event JSON. Optionally set `WEBHOOK_TOKEN` if the receiver requires Bearer authentication.
-6. Start the server and keep `/home/container/data` persistent.
-7. Route the public HTTPS callback to the allocated HTTP port using Nginx or Cloudflare.
+---
 
-The image is built and published to `ghcr.io/kuafeur/voxytube:latest` by GitHub Actions. After the first successful publish, set the GHCR package visibility to **Public** in GitHub Packages if Pelican nodes need to pull it without registry credentials. PostgreSQL credentials are generated on first boot if no password is supplied. Never expose port 5432 publicly.
+## What is VoxyTube?
+
+VoxyTube is a lightweight service that turns YouTube channel uploads into reliable HTTP events.
+
+It uses **YouTube WebSub** for near-real-time notifications, with RSS reconciliation as a fallback. Events are stored in PostgreSQL before delivery, so temporary destination outages do not immediately lose notifications.
+
+VoxyTube is destination-agnostic: send events to your own application, automation platform, community integration, or any service that accepts HTTP requests.
+
+> **Start here:** the full installation, configuration, API and operations guides are available in the **[VoxyTube documentation](https://voxytube.gitbook.io)**.
+
+## Highlights
+
+| | Capability | Details |
+|:--:|---|---|
+| ⚡ | **Near-real-time notifications** | WebSub subscriptions receive upload notifications from YouTube. |
+| 🔁 | **RSS reconciliation** | Periodic feed checks help recover entries missed by push delivery. |
+| 💾 | **Durable event storage** | PostgreSQL-backed deduplication and transactional outbox. |
+| 🪝 | **Any HTTP destination** | Deliver normalized JSON to any compatible webhook endpoint. |
+| 🔐 | **Protected management API** | Bearer-token authentication for channel and event management. |
+| ♻️ | **Retry handling** | Failed deliveries are retried; exhausted events can be inspected and requeued. |
+| 📦 | **Simple deployment** | A single container image includes the service and PostgreSQL. |
+
+### How it works
+
+\`\`\`mermaid
+flowchart LR
+    YT[YouTube] -->|WebSub notifications| WS[VoxyTube]
+    YT -.->|RSS reconciliation| WS
+    WS --> DB[(PostgreSQL)]
+    DB --> OUT[Durable event outbox]
+    OUT -->|HTTP POST + Idempotency-Key| DEST[Any HTTP endpoint]
+\`\`\`
+
+1. Add a YouTube channel through the management API.
+2. VoxyTube subscribes to the channel's WebSub feed.
+3. Incoming notifications are validated, deduplicated and persisted.
+4. The delivery worker sends a normalized JSON event to your configured endpoint.
+5. Failed deliveries are retried automatically.
+
+## Get started
+
+### Deployment with Pelican / Pterodactyl
+
+The recommended deployment uses the published container image and the included Egg.
+
+1. Download and import [\`egg-voxytube.json\`](deploy/pelican/egg-voxytube.json) into your panel.
+2. Create a server from the imported Egg and allocate its application port (default: \`8080\`).
+3. Configure the environment variables below.
+4. Start the server and keep \`/home/container/data\` on persistent storage.
+5. Expose the callback URL over HTTPS and route it to the allocated container port.
+
+**Container image**
+
+\`\`\`text
+ghcr.io/kuafeur/voxytube:latest
+\`\`\`
+
+**Required configuration**
+
+| Variable | Purpose |
+|---|---|
+| \`PUBLIC_CALLBACK_URL\` | Public HTTPS callback URL, ending in \`/websub\`. |
+| \`API_TOKEN\` | Management API Bearer token; use at least 32 random characters. |
+| \`WEBHOOK_URL\` | HTTP(S) destination that receives normalized event JSON. |
+| \`WEBHOOK_TOKEN\` | Optional Bearer token sent to the destination. |
+
+**Optional configuration**
+
+| Variable | Default / purpose |
+|---|---|
+| \`PORT\` | HTTP listen port; defaults to \`8080\`. |
+| \`POSTGRES_DB\` | Embedded PostgreSQL database name; defaults to \`voxytube\`. |
+| \`POSTGRES_USER\` | Embedded PostgreSQL user; defaults to \`voxytube\`. |
+| \`POSTGRES_PASSWORD\` | If omitted, a random password is generated and persisted. |
+| \`POSTGRES_RESTORE_FILE\` | Optional custom-format PostgreSQL dump to restore on startup. |
+| \`DATABASE_MAX_CONNECTIONS\` | Maximum database connections; defaults to \`10\`. |
+| \`RSS_INTERVAL_SECONDS\` | RSS reconciliation interval; defaults to \`300\`. |
+| \`WEBSUB_HUB_URL\` | WebSub hub URL. |
+| \`RUST_LOG\` | Rust tracing filter. |
+
+Generate a management token with:
+
+\`\`\`bash
+openssl rand -hex 32
+\`\`\`
+
+The container's PostgreSQL instance is internal. **Do not expose port \`5432\` publicly.** Keep \`/home/container/data\` persistent: it contains the database and delivery history.
+
+For other deployment methods, reverse-proxy configuration, backups and restore procedures, see the **[documentation](https://voxytube.gitbook.io)**.
 
 ## Management API
 
-All management endpoints require `Authorization: Bearer <API_TOKEN>`.
+All management routes require:
 
-- `POST /api/v1/channels` — JSON body: `{"channel_id":"UC..."}`; starts an asynchronous WebSub subscription.
-- `GET /api/v1/channels` — lists configured channels and their subscription state.
-- `DELETE /api/v1/channels/{channel_id}` — starts an asynchronous unsubscribe; VoxyTube retries until the hub verifies it.
-- `GET /api/v1/events` — event counts and the latest 100 deliveries.
-- `POST /api/v1/events/{id}/retry` — requeues a dead event.
-- `GET /healthz` and `GET /readyz` — database health checks.
-- `GET /websub` and `POST /websub` — public WebSub callback.
+\`\`\`http
+Authorization: Bearer <API_TOKEN>
+\`\`\`
 
-Example:
+| Method | Endpoint | Description |
+|---|---|---|
+| \`POST\` | \`/api/v1/channels\` | Add a channel and request a WebSub subscription. |
+| \`GET\` | \`/api/v1/channels\` | List configured channels and subscription states. |
+| \`DELETE\` | \`/api/v1/channels/{channel_id}\` | Request an asynchronous unsubscribe. |
+| \`GET\` | \`/api/v1/events\` | View event counts and the latest deliveries. |
+| \`POST\` | \`/api/v1/events/{id}/retry\` | Requeue a dead event. |
+| \`GET\` | \`/healthz\` | Check database connectivity. |
+| \`GET\` | \`/readyz\` | Check service readiness. |
 
-```bash
-curl -X POST http://127.0.0.1:8080/api/v1/channels \
-  -H "Authorization: Bearer $API_TOKEN" \
-  -H "Content-Type: application/json" \
+The WebSub callback is public and is available at \`GET /websub\` and \`POST /websub\`.
+
+### Add a channel
+
+\`\`\`bash
+curl -X POST "https://your-host.example/api/v1/channels" \\
+  -H "Authorization: Bearer $API_TOKEN" \\
+  -H "Content-Type: application/json" \\
   -d '{"channel_id":"UCxxxxxxxxxxxxxxxxxxxxxx"}'
-```
+\`\`\`
 
-## Event contract
+A \`202 Accepted\` response means the subscription request was submitted. It does not mean YouTube has verified it yet. Check \`GET /api/v1/channels\` until the channel state becomes \`active\`.
 
-A successful delivery is a JSON object:
+## Event format
 
-```json
+VoxyTube sends a normalized JSON payload to the configured destination:
+
+\`\`\`json
 {
   "event": "youtube.video.published",
   "video_id": "VIDEO_ID",
@@ -63,32 +160,77 @@ A successful delivery is a JSON object:
   "published_at": "2026-11-13T10:00:00Z",
   "source": "websub"
 }
-```
+\`\`\`
 
-VoxyTube sends `Idempotency-Key: voxytube-<outbox-id>`. The receiving endpoint should honor this key to avoid duplicate side effects if a network timeout occurs after the receiver accepted a request.
+Each delivery includes an \`Idempotency-Key\` header:
 
-## Local development
+\`\`\`http
+Idempotency-Key: voxytube-<outbox-id>
+\`\`\`
 
-Use Rust stable (edition 2024) and PostgreSQL 14+. Create a database, copy `.env.example` to `.env`, set `DATABASE_URL`, `PUBLIC_CALLBACK_URL` and `API_TOKEN`, then run `cargo run`.
+### Delivery guarantees
 
-## Event operations
+Delivery is **at-least-once**, not exactly-once. A network timeout can happen after the destination has already processed a request. Your receiving endpoint should therefore store and honor the \`Idempotency-Key\` to prevent duplicate side effects.
 
-- GET /api/v1/events returns counts by state and the latest 100 events. Requires the management bearer token.
-- POST /api/v1/events/{id}/retry requeues a dead event and resets its retry counter. Requires the management bearer token.
-- DELETE /api/v1/channels/{channel_id} starts an asynchronous WebSub unsubscribe; the request is retried until the hub verifies it.
+Events are persisted before delivery. If \`WEBHOOK_URL\` is empty, delivery is disabled and events remain in the outbox until a destination is configured.
 
-## Operations and backups
+## Technical details
 
-The PostgreSQL data directory is stored in `/home/container/data/postgres`. Keep this directory on Pelican's persistent server volume; deleting it resets all channel subscriptions and delivery history. Stop the server before taking a raw filesystem backup. For a live logical backup, run `pg_dump -Fc -d voxytube` as the `postgres` OS user from inside the container and copy the resulting dump to persistent storage. Restore with `pg_restore` while VoxyTube is stopped and PostgreSQL is running, after first taking a separate backup of the current data.
+- **Language:** Rust (edition 2024)
+- **HTTP:** Axum
+- **Database:** PostgreSQL
+- **Notifications:** YouTube WebSub with RSS reconciliation
+- **Deployment:** Docker / Pelican / Pterodactyl
 
-Check `/healthz` for database connectivity. Inspect the container logs for subscription errors and delivery retry messages. A channel should show `active` from `GET /api/v1/channels` after YouTube completes its WebSub verification challenge. If delivery is disabled because `WEBHOOK_URL` is empty, events remain durable in the outbox until a destination is configured.
+VoxyTube does not use YouTube page scraping, \`yt-dlp\`, or a YouTube Data API key.
 
-For backup and restore procedures, see [the operations guide](docs/OPERATIONS.md).
+## Development
 
-## Stability notice
+Requirements: Rust stable and PostgreSQL 14 or newer.
 
-The V1 implementation is under active validation. A release must not be considered stable until CI builds and tests pass, the container is exercised on supported architectures, and an end-to-end WebSub/RSS/outbox test has been completed. YouTube and hub delivery behavior can change independently of VoxyTube.
+\`\`\`bash
+git clone https://github.com/KuaFeur/Voxytube.git
+cd Voxytube
+cp .env.example .env
+\`\`\`
+
+Set \`DATABASE_URL\`, \`PUBLIC_CALLBACK_URL\` and \`API_TOKEN\` in \`.env\`, then run:
+
+\`\`\`bash
+cargo run
+\`\`\`
+
+Run the test suite and static checks:
+
+\`\`\`bash
+cargo fmt --all -- --check
+cargo test --all-targets
+cargo clippy --all-targets -- -A warnings
+\`\`\`
+
+## Documentation
+
+The GitBook site is the main reference for setup and operations:
+
+<div align="center">
+
+### [Read the VoxyTube documentation →](https://voxytube.gitbook.io)
+
+Installation · Configuration · API · Troubleshooting · Backups
+
+</div>
+
+Additional repository resources:
+
+- [Operations guide](docs/OPERATIONS.md)
+- [Pelican Egg](deploy/pelican/egg-voxytube.json)
+- [Releases](https://github.com/KuaFeur/Voxytube/releases)
+- [Issues and bug reports](https://github.com/KuaFeur/Voxytube/issues)
+
+## Project status
+
+VoxyTube is under active development and validation. Do not treat the current V1 implementation as production-stable until CI, supported container architectures and end-to-end WebSub/RSS/outbox delivery have all been validated. YouTube and WebSub behavior can change independently of this project.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+VoxyTube is licensed under the [Apache License 2.0](LICENSE).
