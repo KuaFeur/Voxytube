@@ -90,10 +90,10 @@
     },
     {
       "name": "Destination Webhook Token",
-      "description": "Optional bearer token sent to the destination endpoint.",
+      "description": "Optional Bearer token sent to the destination endpoint. Visible and editable in the server startup variables.",
       "env_variable": "WEBHOOK_TOKEN",
       "default_value": "",
-      "user_viewable": false,
+      "user_viewable": true,
       "user_editable": true,
       "rules": "nullable|string|max:512",
       "field_type": "password"
