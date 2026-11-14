@@ -1,6 +1,6 @@
 # VoxyTube
 
-VoxyTube is an independent Rust service that receives YouTube upload notifications and delivers normalized events to a configured HTTP webhook endpoint. It does not connect to Discord itself.
+VoxyTube is an independent Rust service that receives YouTube upload notifications and delivers normalized events to a configured HTTP webhook endpoint. It does not perform destination-specific actions; it only delivers normalized HTTP events.
 
 ## V1 scope
 
