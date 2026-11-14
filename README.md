@@ -1,6 +1,6 @@
 # VoxyTube
 
-VoxyTube is an independent Rust service that receives YouTube upload notifications and delivers normalized events to a configured Voxy webhook. It does not connect to Discord itself.
+VoxyTube is an independent Rust service that receives YouTube upload notifications and delivers normalized events to a configured HTTP webhook endpoint. It does not perform destination-specific actions; it only delivers normalized HTTP events.
 
 ## V1 scope
 
@@ -21,7 +21,7 @@ The image contains VoxyTube (Rust) and PostgreSQL. PostgreSQL binds only to cont
 2. Create a server from the Egg and allocate its HTTP port (8080 by default).
 3. Set `PUBLIC_CALLBACK_URL` to the public HTTPS URL ending in `/websub`.
 4. Set `API_TOKEN` to a random value of at least 32 characters.
-5. Set `VOXY_WEBHOOK_URL` to the endpoint that Voxy will expose to receive event JSON. Optionally set `VOXY_WEBHOOK_TOKEN`.
+5. Set `WEBHOOK_URL` to the HTTP(S) endpoint that will receive event JSON. Optionally set `WEBHOOK_TOKEN` if the receiver requires Bearer authentication.
 6. Start the server and keep `/home/container/data` persistent.
 7. Route the public HTTPS callback to the allocated HTTP port using Nginx or Cloudflare.
 
@@ -81,7 +81,7 @@ Use Rust stable (edition 2024) and PostgreSQL 14+. Create a database, copy `.env
 
 The PostgreSQL data directory is stored in `/home/container/data/postgres`. Keep this directory on Pelican's persistent server volume; deleting it resets all channel subscriptions and delivery history. Stop the server before taking a raw filesystem backup. For a live logical backup, run `pg_dump -Fc -d voxytube` as the `postgres` OS user from inside the container and copy the resulting dump to persistent storage. Restore with `pg_restore` while VoxyTube is stopped and PostgreSQL is running, after first taking a separate backup of the current data.
 
-Check `/healthz` for database connectivity. Inspect the container logs for subscription errors and delivery retry messages. A channel should show `active` from `GET /api/v1/channels` after YouTube completes its WebSub verification challenge. If delivery is disabled because `VOXY_WEBHOOK_URL` is empty, events remain durable in the outbox until a destination is configured.
+Check `/healthz` for database connectivity. Inspect the container logs for subscription errors and delivery retry messages. A channel should show `active` from `GET /api/v1/channels` after YouTube completes its WebSub verification challenge. If delivery is disabled because `WEBHOOK_URL` is empty, events remain durable in the outbox until a destination is configured.
 
 For backup and restore procedures, see [the operations guide](docs/OPERATIONS.md).
 

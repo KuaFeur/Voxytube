@@ -7,8 +7,8 @@ pub struct Settings {
     pub port: u16,
     pub callback_url: String,
     pub api_token: String,
-    pub voxy_webhook_url: String,
-    pub voxy_webhook_token: Option<String>,
+    pub webhook_url: String,
+    pub webhook_token: Option<String>,
     pub rss_interval_seconds: u64,
     pub hub_url: String,
 }
@@ -35,8 +35,8 @@ impl Settings {
         if api_token.len() < 32 {
             anyhow::bail!("API_TOKEN must contain at least 32 characters");
         }
-        let voxy_webhook_url = env::var("VOXY_WEBHOOK_URL").unwrap_or_default();
-        let voxy_webhook_token = env::var("VOXY_WEBHOOK_TOKEN").ok().filter(|v| !v.is_empty());
+        let webhook_url = env::var("WEBHOOK_URL").unwrap_or_default();
+        let webhook_token = env::var("WEBHOOK_TOKEN").ok().filter(|v| !v.is_empty());
         let rss_interval_seconds: u64 = env::var("RSS_INTERVAL_SECONDS")
             .unwrap_or_else(|_| "300".into()).parse()?;
         if !(60..=86_400).contains(&rss_interval_seconds) {
@@ -52,18 +52,18 @@ impl Settings {
         if hub.scheme() != "https" || hub.host_str().is_none() || !hub.username().is_empty() || hub.password().is_some() {
             anyhow::bail!("WEBSUB_HUB_URL must be an HTTPS URL without credentials");
         }
-        if !voxy_webhook_url.is_empty() {
-            let webhook = reqwest::Url::parse(&voxy_webhook_url)
-                .map_err(|_| anyhow::anyhow!("VOXY_WEBHOOK_URL must be a valid URL"))?;
+        if !webhook_url.is_empty() {
+            let webhook = reqwest::Url::parse(&webhook_url)
+                .map_err(|_| anyhow::anyhow!("WEBHOOK_URL must be a valid URL"))?;
             if !matches!(webhook.scheme(), "https" | "http") || webhook.host_str().is_none()
                 || !webhook.username().is_empty() || webhook.password().is_some() {
-                anyhow::bail!("VOXY_WEBHOOK_URL must be an HTTP(S) URL without credentials");
+                anyhow::bail!("WEBHOOK_URL must be an HTTP(S) URL without credentials");
             }
         }
 
         Ok(Self {
             database_url, database_max_connections, port, callback_url, api_token,
-            voxy_webhook_url, voxy_webhook_token, rss_interval_seconds, hub_url,
+            webhook_url, webhook_token, rss_interval_seconds, hub_url,
         })
     }
 }
